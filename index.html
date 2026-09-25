@@ -480,8 +480,8 @@ textarea.input { min-height: 90px; resize: vertical; }
 
 <div style="font-family:Inter,system-ui,sans-serif;color:#0A0F1F;background:#F7F8FB;font-size:17px;line-height:1.55;overflow-x:clip">
 
-  <div style="position:sticky;top:0;height:0;z-index:50;padding:0 14px">
-    <nav data-nav="" data-screen-label="Topo" style="position:relative;top:22px;max-width:1200px;margin:0 auto;height:60px;box-sizing:border-box;padding:0 8px 0 20px;display:flex;align-items:center;gap:18px;border-radius:999px;background:rgba(255,255,255,.78);background:rgba(255,255,255,.94);border:1px solid rgba(10,15,31,.08);transition:box-shadow .3s">
+  <div style="position:fixed;top:0;left:0;right:0;height:0;z-index:50;padding:0 28px">
+    <nav data-nav="" data-screen-label="Topo" style="position:relative;top:22px;max-width:1176px;margin:0 auto;height:60px;box-sizing:border-box;padding:0 8px 0 20px;display:flex;align-items:center;gap:18px;border-radius:999px;background:rgba(255,255,255,.78);background:rgba(255,255,255,.94);border:1px solid rgba(10,15,31,.08);transition:box-shadow .3s,top .3s">
       <a href="#" style="display:flex;flex-shrink:0;text-decoration:none"><ma-logo size="24"></ma-logo></a>
       <div style="flex:1 1 0;min-width:0;height:40px;overflow:hidden;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;column-gap:4px;font:600 14.5px/40px 'Plus Jakarta Sans',Manrope,sans-serif">
         <a href="#como" style="padding:0 12px;border-radius:999px;color:#3B4458;text-decoration:none" style-hover="background:#EEF1F7;color:#0A0F1F">Como funciona</a>
@@ -995,7 +995,7 @@ class Component extends DCLogic {
         if (reduce) tilt.style.transform = 'none';
         else { const p = Math.min(1, y / 480); tilt.style.transform = 'rotateX(' + (14 * (1 - p) - ny * 4).toFixed(2) + 'deg) rotateY(' + (nx * 7).toFixed(2) + 'deg) scale(' + (0.94 + 0.06 * p).toFixed(3) + ')'; }
       }
-      if (nav) nav.style.boxShadow = y > 30 ? '0 14px 36px -16px rgba(10,15,31,.35)' : 'none';
+      if (nav) { nav.style.boxShadow = y > 30 ? '0 14px 36px -16px rgba(10,15,31,.35)' : 'none'; nav.style.top = y > 30 ? '12px' : '22px'; }
     };
     const req = () => { if (!tk) tk = requestAnimationFrame(apply); };
     let cur = null, tk2 = 0, ev = null;

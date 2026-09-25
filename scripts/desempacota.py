@@ -123,6 +123,17 @@ assert 'UpToDate' not in tpl
 tpl = troca(tpl, 'summary::-webkit-details-marker{display:none}',
             'summary::-webkit-details-marker{display:none}\n    @media (max-width:540px){[data-nav]>div{visibility:hidden}}')
 
+# menu do topo: era sticky dentro de um <div> de altura 0 e tinha a MESMA largura do hero escuro, então ficava
+# montado em cima da borda dele. Agora é fixed (não depende do container) e fica 12px para dentro do hero em
+# todos os lados; ao rolar, sobe para 12px do topo.
+tpl = troca(tpl, '<div style="position:sticky;top:0;height:0;z-index:50;padding:0 14px">',
+            '<div style="position:fixed;top:0;left:0;right:0;height:0;z-index:50;padding:0 28px">')
+tpl = troca(tpl, 'position:relative;top:22px;max-width:1200px;', 'position:relative;top:22px;max-width:1176px;')
+tpl = troca(tpl, 'border:1px solid rgba(10,15,31,.08);transition:box-shadow .3s"',
+            'border:1px solid rgba(10,15,31,.08);transition:box-shadow .3s,top .3s"')
+tpl = troca(tpl, "if (nav) nav.style.boxShadow = y > 30 ? '0 14px 36px -16px rgba(10,15,31,.35)' : 'none';",
+            "if (nav) { nav.style.boxShadow = y > 30 ? '0 14px 36px -16px rgba(10,15,31,.35)' : 'none'; nav.style.top = y > 30 ? '12px' : '22px'; }")
+
 # bug do original: iframe ainda não carregado era apontado para "app/index.html", que não existe
 tpl = troca(tpl, "f.setAttribute('src', 'app/index.html' + hash);", "f.setAttribute('src', 'demo/index.html' + hash);")
 
