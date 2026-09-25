@@ -8,7 +8,7 @@ O que muda para o visitante:
   - cada arquivo é baixado uma vez e fica em cache (a demo também: os 5 iframes dividem os mesmos arquivos);
   - título, descrição e prévia do link ficam no HTML (WhatsApp/Instagram não executam JS).
 """
-import base64, gzip, json, os, re, shutil, sys
+import base64, gzip, hashlib, json, os, re, shutil, sys
 
 ORIGEM, DESTINO = sys.argv[1], sys.argv[2]
 SITE = 'https://medatalho.com'
@@ -69,8 +69,9 @@ for uid, (mime, b) in drec.items():
         grava('demo/js/' + nome, b)
         dtpl = troca(dtpl, f'<script src="{uid}">', f'<script src="js/{nome}">')
     elif mime == 'font/woff2':
-        fontes_demo[f'fontes/{uid[:8]}.woff2'] = b
-        dtpl = dtpl.replace(uid, f'fontes/{uid[:8]}.woff2')
+        nome = hashlib.sha1(b).hexdigest()[:10]  # nome pelo conteúdo: estável entre exportações (cache e git)
+        fontes_demo[f'fontes/{nome}.woff2'] = b
+        dtpl = dtpl.replace(uid, f'fontes/{nome}.woff2')
 # no iframe não há ícone, manifesto nem instalação: tudo isso dava 404 ou registrava um service worker à toa
 dtpl = re.sub(r'<link rel="(manifest|icon|apple-touch-icon|apple-touch-startup-image)"[^>]*>\n?', '', dtpl)
 dtpl = re.sub(r'<meta (name="apple-mobile-web-app[^"]*"|property="og:[^"]*"|name="twitter:[^"]*")[^>]*>\n?', '', dtpl)
@@ -82,20 +83,30 @@ for rel in usadas:
 grava('demo/index.html', dtpl)
 
 # ---------------------------------------------------------------- página de vendas
-NOMES = {'d958af28': 'dc-runtime.js', '2902b188': 'react.production.min.js',
-         '8180a679': 'react-dom.production.min.js', '363977ec': 'marca.js'}
-# ds-bundle (namespace vazio) e o scaffold <image-slot> (nenhum na página): 65 KB que só atrasavam
-DESCARTA = {'8a5c573b', '35636323'}
+# os uuids mudam a cada exportação: cada script é reconhecido pelo começo do conteúdo
+ASSINATURAS = [('GENERATED from dc-runtime', 'dc-runtime.js'), ('react-dom.production.min.js', 'react-dom.production.min.js'),
+               ('react.production.min.js', 'react.production.min.js'), ('peças da marca', 'marca.js'),
+               # ds-bundle (namespace vazio) e o scaffold <image-slot> (nenhum na página): 65 KB que só atrasavam
+               ('@ds-bundle', None), ('omelette starter scaffold', None)]
+NOMES = {}
+for uid, (mime, b) in rec.items():
+    if 'javascript' in mime:
+        cab = b[:400].decode('utf-8', 'replace')
+        achou = [n for k, n in ASSINATURAS if k in cab]
+        if not achou:
+            sys.exit(f'script desconhecido na exportação ({uid[:8]}): {cab[:100]!r}')
+        NOMES[uid[:8]] = achou[0]
 fontes = {}
 for uid, (mime, b) in rec.items():
     curto = uid[:8]
     if uid == demo_uid:
         tpl = re.sub(r'about:blank#' + uid + r'(#[^"]*)?', lambda m: 'demo/index.html' + (m.group(1) or ''), tpl)
-    elif curto in DESCARTA:
+    elif curto in NOMES and NOMES[curto] is None:
         tpl = re.sub(r'\s*<script src="' + uid + r'"></script>', '', tpl)
     elif mime == 'font/woff2':
-        fontes[f'assets/fontes/{curto}.woff2'] = b
-        tpl = tpl.replace(uid, f'assets/fontes/{curto}.woff2')
+        nome = hashlib.sha1(b).hexdigest()[:10]
+        fontes[f'assets/fontes/{nome}.woff2'] = b
+        tpl = tpl.replace(uid, f'assets/fontes/{nome}.woff2')
     elif mime == 'image/svg+xml':
         grava('assets/favicon.svg', b)
         tpl = tpl.replace(uid, 'assets/favicon.svg')
@@ -118,16 +129,14 @@ tpl = re.sub(r'(&quot;teste&quot;:\{[^}]*?&quot;default&quot;:)true', r'\1false'
 tpl = re.sub(r'\s*<span [^<>]*>UpToDate</span>', '', tpl)                                   # não citar UpToDate
 assert 'UpToDate' not in tpl
 
-# bug do original: no celular nem o 1º link do menu cabia e "Como funciona" aparecia cortado ao meio.
-# Abaixo de 540px ficam só logo + Assinar (o <div> continua ocupando o espaço, o botão não pula).
-tpl = troca(tpl, 'summary::-webkit-details-marker{display:none}',
-            'summary::-webkit-details-marker{display:none}\n    @media (max-width:540px){[data-nav]>div{visibility:hidden}}')
+# no celular (<=720px) o designer esconde o menu inteiro ([data-navwrap]{display:none}) desde o export "mobile pv"
+assert '[data-navwrap]{display:none' in tpl, 'export sem o layout mobile: rever o menu do topo no celular'
 
 # menu do topo: era sticky dentro de um <div> de altura 0 e tinha a MESMA largura do hero escuro, então ficava
 # montado em cima da borda dele. Agora é fixed (não depende do container) e fica 12px para dentro do hero em
 # todos os lados; ao rolar, sobe para 12px do topo.
-tpl = troca(tpl, '<div style="position:sticky;top:0;height:0;z-index:50;padding:0 14px">',
-            '<div style="position:fixed;top:0;left:0;right:0;height:0;z-index:50;padding:0 28px">')
+tpl = troca(tpl, 'style="position:sticky;top:0;height:0;z-index:50;padding:0 14px"',
+            'style="position:fixed;top:0;left:0;right:0;height:0;z-index:50;padding:0 28px"')
 tpl = troca(tpl, 'position:relative;top:22px;max-width:1200px;', 'position:relative;top:22px;max-width:1176px;')
 tpl = troca(tpl, 'border:1px solid rgba(10,15,31,.08);transition:box-shadow .3s"',
             'border:1px solid rgba(10,15,31,.08);transition:box-shadow .3s,top .3s"')
