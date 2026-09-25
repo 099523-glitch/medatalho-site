@@ -672,8 +672,8 @@
     }
     var html = '<div class="nav-g"><span class="nav-t">Navegar</span>' +
       link('#', 'casa', 'Início', !resultados && modo === 'home') +
-      link('#' + (areaAtual || (CATEGORIAS[0] && CATEGORIAS[0].id) || ''), 'livro', 'Guia clínico',
-           !resultados && (modo === 'guia' || !!condutaAtual));
+      link(celular() ? '#guia' : '#' + (areaAtual || (CATEGORIAS[0] && CATEGORIAS[0].id) || ''), 'livro', 'Guia clínico',
+           !resultados && (modo === 'guia' || modo === 'areas' || !!condutaAtual));
     if (temQueixas()) {
       html += link('#queixa', 'porta', 'Queixas', !resultados && modo === 'queixa') +
               link('#critico', 'perigo', 'Sala vermelha', !resultados && modo === 'critico');
@@ -967,6 +967,20 @@
   var RE_INTOX = /(^|\s)(intox|envenen|overdose|superdosagem|ingeriu|ingestao)/;
   var PALAVRAS_VAZIAS = /(^|\s)(intoxicacao|intoxicado|intoxicada|envenenamento|overdose|por|de|da|do|com|dose|doses)(?=\s|$)/g;
 
+  /* nome comercial ou sinônimo → slug da droga no índice (o que se fala no plantão) */
+  var SINONIMOS_BUSCA = {
+    'epinefrina':'adrenalina', 'adrenalin':'adrenalina', 'norepinefrina':'noradrenalina', 'nora':'noradrenalina',
+    'metamizol':'dipirona', 'novalgina':'dipirona', 'acetaminofeno':'paracetamol', 'tylenol':'paracetamol',
+    'albuterol':'salbutamol', 'aerolin':'salbutamol', 'berotec':'fenoterol', 'atrovent':'brometo-de-ipratropio',
+    'ipratropio':'brometo-de-ipratropio', 'hidantal':'fenitoina', 'dormonid':'midazolam', 'valium':'diazepam',
+    'haldol':'haloperidol', 'plasil':'metoclopramida', 'buscopan':'escopolamina', 'decadron':'dexametasona',
+    'solu cortef':'hidrocortisona', 'ancoron':'amiodarona', 'clexane':'enoxaparina', 'rocefin':'ceftriaxona',
+    'zofran':'ondansetrona', 'vonau':'ondansetrona', 'tridil':'nitroglicerina', 'nipride':'nitroprussiato-de-sodio',
+    'lasix':'furosemida', 'dimorf':'morfina', 'tramal':'tramadol', 'transamin':'acido-tranexamico',
+    'isordil':'dinitrato-de-isossorbida', 'kanakion':'fitomenadiona', 'narcan':'naloxona', 'lanexat':'flumazenil',
+    'fluimucil':'n-acetilcisteina', 'nac':'n-acetilcisteina', 'bicarbonato':'bicarbonato-de-sodio', 'kcl':'cloreto-de-potassio'
+  };
+
   function intencaoBusca() {
     var qn = normaliza(termoBusca).replace(/\s+/g, ' ').trim();
     if (qn.length < 3) return { droga:null, tox:[], intox:false };
@@ -982,7 +996,9 @@
     /* droga: nome (ou sinônimo) igual ao digitado, ou começando por ele */
     var alvo = qn.replace(PALAVRAS_VAZIAS, ' ').replace(/\s+/g, ' ').trim();
     var droga = null, melhor = 0;
+    var aliasSlug = SINONIMOS_BUSCA[alvo] || ALIAS_DROGA[alvo.replace(/\s+/g, '-')] || '';
     if (alvo.length >= 3) indiceDrogas().forEach(function (d) {
+      if (aliasSlug && d.slug === aliasSlug) { if (melhor < 3 || !droga) { melhor = 3; droga = d; } return; }
       var nomes = [d.nome].concat(Object.keys(d.sin)).map(normaliza).concat([d.slug.replace(/-/g, ' ')]);
       var pts = 0;
       nomes.forEach(function (n) {
@@ -1043,6 +1059,107 @@
       '<footer><a class="bzr-cta" href="#droga/' + esc(d.slug) + '">Abrir verbete completo' + ICO('setaDir') + '</a>' +
         (d.usos.length ? '<span>' + d.usos.length + (d.usos.length === 1 ? ' uso' : ' usos') + ' no guia</span>' : '') + '</footer>' +
     '</article>';
+  }
+
+  /* doses pediátricas (módulo de pediatria) que são desta droga */
+  var VAZIAS_DROGA = { acido:1, sulfato:1, cloreto:1, brometo:1, cloridrato:1, solucao:1, soro:1, sais:1, sal:1, gluconato:1 };
+  function palavrasDroga(t) {
+    return normaliza(t).split(/[^a-z0-9]+/).filter(function (w) { return w.length >= 5 && !VAZIAS_DROGA[w]; });
+  }
+  function pediatriaDe(d) {
+    if (!temFerramentas() || !Ferramentas.ped) return [];
+    var alvo = {}; [d.nome].concat(Object.keys(d.sin)).forEach(function (n) { palavrasDroga(n).forEach(function (w) { alvo[w] = 1; }); });
+    return Ferramentas.ped.lista().filter(function (m) {
+      var pw = palavrasDroga(m.nome)[0];
+      return pw && alvo[pw];
+    });
+  }
+  function linhasPediatria(lista) {
+    var P = Ferramentas.ped, kg = pesoAtual();
+    return lista.map(function (m) {
+      var linhas = (m.doses || []).map(function (d) {
+        var r = kg ? P.calc(m, d, kg) : null;
+        var un = d.unid === 'UI' ? ' UI' : ' mg';
+        var faixa = d.mgkg != null ? br(d.mgkg) + (d.mgkgMax && d.mgkgMax !== d.mgkg ? '–' + br(d.mgkgMax) : '') + un + '/kg' : (d.fixa || '');
+        var conc = r && r.vol && P.conc ? P.conc(m, d) : null;
+        return '<li><span class="bzf-sit">' + esc(d.rot || 'Dose') + (d.freq ? '<i>' + esc(d.freq) + '</i>' : '') + '</span>' +
+          '<span class="bzf-dose">' + (r ? '<b>' + milhar(esc(r.vol || r.mg)) + '</b>' + (r.vol ? '<em>' + milhar(esc(r.mg)) + '</em>' : '') : '<b>' + milhar(esc(faixa)) + '</b>') +
+            '<small>' + (r ? milhar(esc(faixa)) + ' · ' : '') + (d.maxMg ? 'máx. ' + milhar(br(d.maxMg)) + un : '') + (conc ? ' · volume para ' + br(conc) + un + '/mL' : '') + '</small>' +
+            (d.nota && RE_NOTA_FORTE.test(d.nota) ? '<small class="forte">' + esc(d.nota) + '</small>' : '') + '</span></li>';
+      }).join('');
+      return '<div class="bzf-ped"><h4>' + esc(m.nome) + (m.via ? ' <i>' + esc(m.via) + '</i>' : '') + '</h4>' +
+        (m.apres ? '<p class="bzf-apres">' + esc(m.apres) + '</p>' : '') +
+        (m.veto && m.veto.txt ? '<p class="bzf-veto">' + ICO('alerta') + '<span>' + esc(m.veto.txt) + '</span></p>' : '') +
+        '<ul class="bzf-lista">' + linhas + '</ul></div>';
+    }).join('');
+  }
+  function fichaDroga(d) {
+    var b = d.bul, vias = viasLimpas(d.vias);
+    var apres = b && (b.apres || []).length ? b.apres : Object.keys(d.apres);
+    var adulto = b && (b.ind || []).length
+      ? b.ind.map(function (u) { return { sit:u.sit, dose:u.dose, via:u.via, prep:u.prep }; })
+      : d.usos.filter(function (u) { return u.conduta.categoria !== 'pedia'; }).slice(0, 8)
+          .map(function (u) { return { sit:u.detalhe || u.situacao, dose:u.dose, via:u.via, prep:u.preparo }; });
+    var ped = pediatriaDe(d), kg = pesoAtual();
+    var tox = []; d.usos.forEach(function (u) { if (u.conduta.categoria === 'toxico' && tox.indexOf(u.conduta) === -1) tox.push(u.conduta); });
+    return '<article class="bzr-card bzr-droga bzf">' +
+      '<header><span class="bzr-ico">' + ICO('seringa') + '</span>' +
+        '<div><small>Droga' + (b && b.classe ? ' · ' + esc(b.classe) : '') + '</small><h2>' + esc(d.nome) + '</h2>' +
+        (apres.length ? '<p>' + esc(apres.slice(0, 3).join(' · ')) + '</p>' : '') + '</div>' +
+        (vias.length ? '<span class="bzr-vias">' + vias.map(function (v) { return '<i>' + esc(v) + '</i>'; }).join('') + '</span>' : '') +
+      '</header>' +
+      '<div class="bzf-cols">' +
+        '<section class="bzf-col"><h3><span class="bzf-tag adulto">Adulto</span><em>' + adulto.length + (adulto.length === 1 ? ' indicação' : ' indicações') + '</em></h3>' +
+          (adulto.length ? '<ul class="bzf-lista">' + adulto.map(function (l) {
+            return '<li><span class="bzf-sit">' + rico(l.sit || '') + '</span><span class="bzf-dose"><b>' + rico(l.dose || '') + '</b>' +
+              (l.via ? '<i>' + esc(l.via) + '</i>' : '') + (l.prep ? '<small>' + rico(l.prep) + '</small>' : '') + '</span></li>';
+          }).join('') + '</ul>' : '<p class="bzf-vazio">Sem dose de adulto no guia.</p>') +
+          (b && b.dil ? '<p class="bzf-dil"><b>Diluição</b>' + rico(b.dil) + '</p>' : '') +
+        '</section>' +
+        '<section class="bzf-col crianca"><h3><span class="bzf-tag crianca">Criança</span>' +
+          (ped.length ? '<label class="bzf-peso' + (kg ? ' cheio' : '') + '"><span>Peso</span><input type="text" inputmode="decimal" id="bzPeso" value="' + (kg ? br(kg) : '') + '" placeholder="—" aria-label="Peso da criança em kg"><i>kg</i></label>' : '') + '</h3>' +
+          (ped.length ? (kg ? '' : '<p class="bzf-dica">Informe o peso para ver o volume em mL.</p>') + linhasPediatria(ped)
+                      : '<p class="bzf-vazio">Sem dose pediátrica no módulo de pediatria.</p>') +
+        '</section>' +
+      '</div>' +
+      (tox.length ? '<p class="bzr-antidoto">' + ICO('escudo') + '<span>' + (ehAntidoto(d, tox) ? 'Antídoto em ' : 'Usada nas intoxicações: ') + tox.map(function (p) {
+        return '<a href="' + esc(hrefDe(p)) + '">' + esc(p.titulo) + '</a>'; }).join(', ') + '</span></p>' : '') +
+      '<footer><a class="bzr-cta" href="#droga/' + esc(d.slug) + '">Verbete completo' + ICO('setaDir') + '</a>' +
+        (b && b.max ? '<span>Máximo: ' + esc(b.max) + '</span>' : '') + '</footer>' +
+    '</article>';
+  }
+
+  /* onde a droga aparece: condutas de adulto e de pediatria (com a dose da situação) + queixas em pílulas */
+  function ondeUsar(d, excluir) {
+    var porConduta = {}, conds = [];
+    d.usos.forEach(function (u) {
+      if (excluir.indexOf(u.conduta) !== -1 || porConduta[u.conduta.id]) return;
+      porConduta[u.conduta.id] = u; conds.push(u.conduta);
+    });
+    var ord = function (a, b) { return (PESO_GRAV[a.gravidade] || 2) - (PESO_GRAV[b.gravidade] || 2) || (a.titulo < b.titulo ? -1 : 1); };
+    var adulto = conds.filter(function (p) { return p.categoria !== 'pedia'; }).sort(ord);
+    var pedia = conds.filter(function (p) { return p.categoria === 'pedia'; }).sort(ord);
+    function linha(p) {
+      var u = porConduta[p.id];
+      return '<a class="bzr-li g-' + esc(p.gravidade || 'rotina') + '" href="' + esc(hrefDe(p)) + '"><i class="bzr-dot"></i>' +
+        '<span class="bzr-t"><b>' + esc(p.titulo) + '</b>' + (u.detalhe ? '<small>' + esc(u.detalhe) + '</small>' : '') + '</span>' +
+        '<span class="bzr-pill">' + rico(u.dose) + (u.via ? ' <i>' + esc(u.via) + '</i>' : '') + '</span>' + ICO('setaDir') + '</a>';
+    }
+    function coluna(titulo, cls, lista) {
+      if (!lista.length) return '';
+      var mostra = lista.slice(0, 10), resto = lista.slice(10);
+      return '<section class="bzr-rel ' + cls + '"><header><h3>' + titulo + '</h3><span>' + lista.length + '</span></header><div>' +
+        mostra.map(linha).join('') +
+        (resto.length ? '<details class="bzr-mais-d"><summary>Ver mais ' + resto.length + '</summary>' + resto.map(linha).join('') + '</details>' : '') +
+        '</div></section>';
+    }
+    var qxs = queixasDe(conds);
+    var h = '<div class="bzr-rels' + (adulto.length && pedia.length ? '' : ' um') + '">' +
+      coluna('Condutas — adulto', 'bzr-ad', adulto) + coluna('Condutas — pediatria', 'bzr-pd', pedia) + '</div>';
+    if (qxs.length) h += '<div class="bzr-qpills"><span>Queixas</span>' + qxs.map(function (x) {
+      return '<a href="#queixa/' + esc(x.q.id) + '">' + ICO(x.q.icone || 'porta') + esc(x.q.nome) + '</a>';
+    }).join('') + '</div>';
+    return h;
   }
 
   function cartaoIntox(p, secundaria) {
@@ -1109,17 +1226,15 @@
       h += it.tox.slice(0, 2).map(function (p) { return cartaoIntox(p, false); }).join('');
       if (it.droga) h += cartaoDroga(it.droga);
     } else {
-      if (it.droga) h += cartaoDroga(it.droga);
+      /* droga: a ficha de bolso ocupa a largura toda; a intoxicação (se houver) vem logo abaixo */
+      h = h.replace('<div class="bzr-herois duplo">', '<div class="bzr-herois">');
+      if (it.droga) h += fichaDroga(it.droga);
       h += it.tox.slice(0, 1).map(function (p) { return cartaoIntox(p, true); }).join('');
     }
     h += '</div>';
     /* relacionados: da droga (onde é usada, com a dose) ou da intoxicação */
     if (it.droga && !toxPrimeiro) {
-      var porConduta = {}, conds = [];
-      it.droga.usos.forEach(function (u) {
-        if (!porConduta[u.conduta.id]) { porConduta[u.conduta.id] = u; conds.push(u.conduta); }
-      });
-      h += blocoRelacionados(conds.filter(function (p) { return it.tox.indexOf(p) === -1; }), porConduta, 'Condutas em que é usada');
+      h += ondeUsar(it.droga, it.tox);
     } else if (it.tox.length) {
       var outras = it.droga ? it.droga.usos.map(function (u) { return u.conduta; })
         .filter(function (p, i, a) { return a.indexOf(p) === i && it.tox.indexOf(p) === -1; }) : [];
@@ -1230,7 +1345,7 @@
           return '<section class="cd-fluxo" id="cds-' + x.k + '">' + fluxoV2(x.s) + '</section>'; }).join('') + '</div>' : '') +
         (np ? '<aside class="cd-lado">' + np + '</aside>' : '') + '</div>';
     }
-    if (resto.length) html += '<div class="cd-resto">' + resto.map(function (x) { return cdCartao(x.s, x.k); }).join('') + '</div>';
+    if (resto.length) html += '<div class="cd-resto">' + resto.map(function (x) { return cdCartao(x.s, x.k, true); }).join('') + '</div>';
 
     if ((q.atalhos || []).length) {
       html += '<section class="qx2-ferr" id="qx-ferr"><h3>Ferramentas para este caso</h3><div>' +
@@ -1766,6 +1881,7 @@
       return;
     }
     var COR = { droga:'azul', queixa:'amarelo', conduta:'escuro', quadro:'verde', score:'roxo', calculadora:'roxo' };
+    var recolhe = false;
     if (escopoBusca === 'tudo') {
       var it = intencaoBusca();
       var resp = respostaPrincipal(it);
@@ -1775,8 +1891,9 @@
         if (it.droga) grupos.droga = (grupos.droga || []).filter(function (o) { return o.href !== '#droga/' + it.droga.slug; });
         var destaque = it.tox.map(function (p) { return p.id; });
         grupos.conduta = (grupos.conduta || []).filter(function (o) { return destaque.indexOf(String(o.href).split('/').pop()) === -1; });
-        var sobra = ORDEM_TIPO.some(function (t) { return (grupos[t] || []).length; });
-        if (sobra) html += '<h2 class="bzr-todos">Todos os resultados</h2>';
+        var nSobra = ORDEM_TIPO.reduce(function (t, k) { return t + (grupos[k] || []).length; }, 0);
+        recolhe = nSobra > 0;
+        if (recolhe) html += '<details class="bzr-outros"><summary>Outros resultados <span>' + nSobra + '</span></summary>';
       }
     }
     /* drogas: o nome que começa pelo termo antes das que só o citam */
@@ -1806,7 +1923,7 @@
             (o.dose ? '<span class="bz-dose">' + rico(o.dose) + '</span>' : '') + ICO('setaDir') + '</a>';
         }).join('') + '</div></section>';
     });
-    doc.innerHTML = html + '</div></section>';
+    doc.innerHTML = html + '</div>' + (recolhe ? '</details>' : '') + '</section>';
   }
 
   /* ---------- tela inicial ----------
@@ -1897,15 +2014,36 @@
     lista:'livro', naofazer:'fechar', texto:'livro', dica:'estrela', prescricao:'copiar' };
   var CD_TOM = { alerta:'vermelho', naofazer:'escuro', dica:'amarelo', doses:'azul', prescricao:'verde', tempo:'neutro',
     ordem:'neutro', lista:'neutro', texto:'neutro', passos:'vermelho', fluxo:'neutro' };
-  function cdCartao(sec, k) {
+  /* cartões secundários (dobra=true) vêm fechados no celular: só o título,
+     abre com um toque. No desktop o botão não aparece e nada muda. */
+  var cdAbertos = {};
+  function cdCartao(sec, k, dobra) {
     var t = sec.tipo;
-    return '<section class="cd-card t-' + esc(t) + ' tom-' + (CD_TOM[t] || 'neutro') + '" id="cds-' + k + '">' +
+    var tit = sec.titulo || LABEL[t] || '';
+    var chave = dobra ? ((fluxoConduta && fluxoConduta.id) || '') + ':' + k : '';
+    var aberto = dobra && !!cdAbertos[chave];
+    return '<section class="cd-card t-' + esc(t) + ' tom-' + (CD_TOM[t] || 'neutro') + (dobra ? ' cd-dobra' + (aberto ? ' aberto' : '') : '') + '" id="cds-' + k + '"' +
+        (dobra ? ' data-cd-chave="' + esc(chave) + '"' : '') + '>' +
       '<header class="cd-card-cab"><span class="cd-card-i">' + ICO(CD_ICO[t] || 'livro') + '</span>' +
-        '<h3>' + esc(sec.titulo || LABEL[t] || '') + '</h3>' +
+        '<h3>' + esc(tit) + '</h3>' +
         (t !== 'texto' && (sec.itens || []).length ? '<span class="cd-card-n">' + sec.itens.length + '</span>' : '') +
+        (dobra ? '<button type="button" class="cd-card-abre" aria-expanded="' + (aberto ? 'true' : 'false') + '" aria-controls="cds-' + k + '-c" aria-label="' + esc(tit) + '">' + ICO('setaBai') + '</button>' : '') +
       '</header>' +
-      '<div class="cd-card-corpo">' + bloco(sec) + '</div></section>';
+      '<div class="cd-card-corpo" id="cds-' + k + '-c">' + bloco(sec) + '</div></section>';
   }
+  function cdAlterna(card, abrir) {
+    card.classList.toggle('aberto', abrir);
+    var b = card.querySelector('.cd-card-abre');
+    if (b) b.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    var ch = card.getAttribute('data-cd-chave');
+    if (ch) { if (abrir) cdAbertos[ch] = 1; else delete cdAbertos[ch]; }
+  }
+  doc.addEventListener('click', function (e) {
+    var b = e.target.closest('.cd-card-abre');
+    if (!b) return;
+    var card = b.closest('.cd-card');
+    if (card) cdAlterna(card, !card.classList.contains('aberto'));
+  });
   function cdAgora(sec) {
     return '<section class="cd-agora" id="cds-agora">' +
       '<header><span>' + ICO('perigo') + '</span><h2>' + esc(sec.titulo || 'Fazer agora') + '</h2><i>nesta ordem</i></header>' +
@@ -2140,13 +2278,94 @@
             : (ped ? 'Informe o <b>peso</b> para ver cada dose em mg e mL.' : 'Informe o peso para resolver as doses por kg.')) + '</p>' +
         '</div>' +
       '</header>';
+    html += '<div class="dz2-fixo"><label class="sv9-filtro dz2-busca">' + ICO('lupa') +
+      '<input type="search" id="dzBusca" autocomplete="off" enterkeyhint="search" placeholder="' + (ped ? 'Buscar: amoxicilina, dipirona…' : 'Buscar: adrenalina, midazolam…') + '" aria-label="Buscar droga em todos os grupos" value="' + esc(dzQ) + '">' +
+      '<button type="button" class="dz2-limpa" data-dz-limpa aria-label="Limpar busca"' + (dzQ ? '' : ' hidden') + '>' + ICO('fechar') + '</button></label></div>';
+    html += '<div class="dz2-res" id="dzRes" hidden></div>';
     html += ped ? dzPed(kg, idade) : dzAdulto();
-    html += '<p class="sv9-vazio" id="svVazio" hidden>Nenhuma droga com esse termo.</p></section>';
+    html += '</section>';
     doc.innerHTML = html;
+    var f1 = document.getElementById('svFiltro'); if (f1) f1.value = dzQ;
+    if (dzQ) dzBuscar(dzQ);
   }
 
+  /* busca em TODOS os grupos: a droga aparece onde quer que esteja */
+  var dzQ = '';
+  function dzCardAdulto(i, p) {
+    var slug = slugDroga(i.droga), temB = slug && acharDroga(slug);
+    return '<article class="dz2-card" data-busca="' + esc(normaliza(cru(i.droga))) + '">' +
+      '<div class="dz2-c1"><b>' + rico(i.droga) + '</b>' +
+        (i.via ? '<span class="dz2-via">' + esc(i.via) + '</span>' : '') +
+        (temB ? '<a class="dz2-bulico" href="#droga/' + esc(slug) + '" title="Diluição e apresentação" aria-label="Diluição e apresentação">' + ICO('livro') + '</a>' : '') + '</div>' +
+      '<p class="dz2-dose">' + rico(i.dose) + '</p>' +
+      (i.obs ? '<p class="dz2-obs" data-dz-obs title="Toque para ler tudo">' + rico(i.obs) + '</p>' : '') +
+      (p ? '<a class="dz2-ctx" href="' + esc(hrefConduta(p)) + '">' + esc(p.titulo) + ICO('setaDir') + '</a>' : '') +
+    '</article>';
+  }
+  function dzBuscar(v) {
+    dzQ = v || '';
+    var res = document.getElementById('dzRes'), corpo = doc.querySelector('.dz2-corpo, .dz2-capa');
+    if (!res || !corpo) return;
+    doc.querySelectorAll('#dzBusca, #svFiltro').forEach(function (el) { if (el.value !== dzQ) el.value = dzQ; });
+    var lp = doc.querySelector('[data-dz-limpa]'); if (lp) lp.hidden = !dzQ;
+    var q = normaliza(dzQ.trim());
+    if (!q) { res.hidden = true; res.innerHTML = ''; corpo.hidden = false; return; }
+    var ped = dzModo === 'ped' && Ferramentas.ped, html = '', n = 0;
+    if (ped) {
+      var kg = pesoAtual(), idade = Ferramentas.ped.idade();
+      var ms = pedLista().filter(function (m) { return normaliza(m.nome + ' ' + (m.apres || '')).indexOf(q) !== -1; });
+      n = ms.length;
+      html = '<div class="pd4-grade">' + ms.map(function (m) { return cartaoPed4(m, kg, idade); }).join('') + '</div>';
+    } else {
+      var vistos = {};
+      DOSES_GRUPOS.forEach(function (g) {
+        g.ids.forEach(function (id) {
+          var p = acharConduta(id); if (!p) return;
+          dosesDe(p).forEach(function (sec) {
+            (sec.itens || []).forEach(function (i) {
+              var nome = normaliza(cru(i.droga));
+              if (nome.indexOf(q) === -1) return;
+              var k = nome + '|' + normaliza(cru(i.dose || ''));
+              if (vistos[k]) return;
+              vistos[k] = 1; n++;
+              html += dzCardAdulto(i, p);
+            });
+          });
+        });
+      });
+      html = '<div class="dz2-grade">' + html + '</div>';
+    }
+    res.innerHTML = '<p class="dz2-res-n">' + (n ? n + (n === 1 ? ' resultado' : ' resultados') + ' em todos os grupos' : 'Nenhuma droga com esse termo.') + '</p>' + (n ? html : '');
+    res.hidden = false; corpo.hidden = true;
+  }
+  doc.addEventListener('input', function (e) {
+    if (e.target.id !== 'dzBusca' && !(e.target.id === 'svFiltro' && doc.querySelector('.dz2'))) return;
+    dzBuscar(e.target.value);
+  });
+  doc.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-dz-limpa]')) return;
+    dzBuscar('');
+    var i = document.getElementById('dzBusca'); if (i) i.focus();
+  });
+
+  /* celular: primeiro as áreas em cartões; o toque abre as medicações */
+  function dzCapa(itens, azHref, azAttr, azConta) {
+    return '<div class="dz2-capa"><p class="dz2-capa-t">Escolha a área</p><div class="dz2-areas">' + itens.map(function (a) {
+      return '<a class="dz2-area" ' + a.attr + '><span class="dz2-area-i">' + ICO(a.icone || 'seringa') + '</span><b>' + esc(a.nome) + '</b>' +
+        (a.conta ? '<i>' + esc(a.conta) + '</i>' : '') + '</a>';
+    }).join('') + '<a class="dz2-area az" ' + azAttr + '><span class="dz2-area-i">' + ICO('livro') + '</span><b>Todas A–Z</b><i>' + esc(azConta) + '</i></a></div></div>';
+  }
+  function dzVolta(attr, nome) {
+    return '<div class="dz2-volta-l"><a class="dz2-volta" ' + attr + '>' + ICO('setaEsq') + 'Áreas</a><h2>' + esc(nome) + '</h2></div>';
+  }
   function dzAdulto() {
     var grupos = DOSES_GRUPOS.filter(function (g) { return contaGrupoDoses(g); });
+    if (celular() && !dosesGrupo) {
+      return dzCapa(grupos.map(function (g) {
+        var n = 0; g.ids.forEach(function (id) { var p = acharConduta(id); if (p) dosesDe(p).forEach(function (s) { n += (s.itens || []).length; }); });
+        return { attr:'href="#doses/' + esc(g.id) + '"', nome:g.nome, icone:g.icone, conta:n + (n === 1 ? ' droga' : ' drogas') };
+      }), '', 'href="#doses/az"', 'bulário completo');
+    }
     var atual = dosesGrupo && grupoDoses(dosesGrupo) || grupos[0];
     var az = dosesGrupo === 'az';
     var rail = '<nav class="dz2-rail">' + grupos.map(function (g) {
@@ -2165,35 +2384,34 @@
         return '<section class="dz2-bloco rp-grupo"><header><h2>' + esc(p.titulo) + '</h2><a href="' + esc(hrefConduta(p)) + '">Ver conduta' + ICO('setaDir') + '</a></header>' +
           bl.map(function (sec) {
             return (sec.titulo && bl.length > 1 ? '<h3 class="dz2-sub">' + esc(sec.titulo) + '</h3>' : '') +
-              '<div class="dz2-grade">' + (sec.itens || []).map(function (i) {
-                var slug = slugDroga(i.droga), temB = slug && acharDroga(slug);
-                /* limpo: nome + via na mesma linha, dose em destaque, observação
-                   em 2 linhas (toque expande) e o bulário vira um ícone */
-                return '<article class="dz2-card" data-busca="' + esc(normaliza(cru(i.droga))) + '">' +
-                  '<div class="dz2-c1"><b>' + rico(i.droga) + '</b>' +
-                    (i.via ? '<span class="dz2-via">' + esc(i.via) + '</span>' : '') +
-                    (temB ? '<a class="dz2-bulico" href="#droga/' + esc(slug) + '" title="Diluição e apresentação" aria-label="Diluição e apresentação">' + ICO('livro') + '</a>' : '') + '</div>' +
-                  '<p class="dz2-dose">' + rico(i.dose) + '</p>' +
-                  (i.obs ? '<p class="dz2-obs" data-dz-obs title="Toque para ler tudo">' + rico(i.obs) + '</p>' : '') +
-                '</article>';
-              }).join('') + '</div>';
+              '<div class="dz2-grade">' + (sec.itens || []).map(function (i) { return dzCardAdulto(i); }).join('') + '</div>';
           }).join('') + '</section>';
       }).join('');
     }
     return '<div class="dz2-corpo">' + rail + '<div class="dz2-main">' +
+      (celular() ? dzVolta('href="#doses"', az ? 'Todas as drogas A–Z' : atual.nome) : '') +
       (az ? '<h2 class="dz2-tit">Todas as drogas A–Z</h2>' : '<h2 class="dz2-tit">' + esc(atual.nome) + '<span>' + esc(atual.sub || '') + '</span></h2>') + corpo + '</div></div>';
   }
 
   /* pediatria no mesmo padrão do adulto: grupos na coluna, cartões limpos
      à direita. Cada indicação vira uma linha: rótulo · volume grande · mg. */
-  var dzPedGrupo = ler('pref:dz-ped-grupo', '');
+  var dzPedGrupo = ler('pref:dz-ped-grupo', ''), dzPedCapa = true;
   function milhar(t) { return String(t).replace(/\b\d{4,}\b/g, function (n) { return Number(n).toLocaleString('pt-BR'); }); }
   var RE_NOTA_FORTE = /(dose do dia|\bDIA\b|UNIDADES|SOMENTE|dilu|volume|metade|n[aã]o substitui|m[aá]ximo de)/i;
   var PED_GRUPO_NOME = { analgesia:'Analgesia e febre', antiemetico:'Antieméticos', cortico:'Corticoides', inalacao:'Inalação e broncodilatador',
     'atb-oral':'Antibiótico oral', 'atb-ev':'Antibiótico venoso', alergia:'Alergia', emergencia:'Emergência', digestivo:'Digestivo', convulsao:'Convulsão', sedacao:'Sedação e analgesia',
-    reanimacao:'Reanimação', hidratacao:'Hidratação', gastro:'Gastro', outros:'Outros' };
+    reanimacao:'Reanimação', hidratacao:'Hidratação venosa', gastro:'Gastro', outros:'Outros',
+    antiacido:'Antiácidos', antiespasmodico:'Cólica e antiespasmódico', antiinflamatorio:'Anti-inflamatórios', antiparasitario:'Antiparasitários',
+    tosse:'Tosse e xaropes', laxante:'Laxantes', olhos:'Colírios', ouvido:'Gotas otológicas' };
+  /* as do app primeiro; as da planilha (pediatria-planilha.js) só entram se o id ainda não existe */
+  function pedLista() {
+    var app = Ferramentas.ped.lista(), ids = {};
+    app.forEach(function (m) { ids[m.id] = 1; });
+    var pl = typeof PED_PLANILHA !== 'undefined' ? PED_PLANILHA.filter(function (m) { return !ids[m.id]; }) : [];
+    return app.concat(pl);
+  }
   function dzPed(kg, idade) {
-    var P = Ferramentas.ped, lista = P.lista();
+    var P = Ferramentas.ped, lista = pedLista();
     var grupos = [];
     lista.forEach(function (m) {
       var gn = PED_GRUPO_NOME[m.grupo] || (m.grupo ? m.grupo.charAt(0).toUpperCase() + m.grupo.slice(1).replace(/-/g, ' ') : 'Medicações');
@@ -2201,6 +2419,15 @@
       if (!g) { g = { nome:gn, itens:[] }; grupos.push(g); }
       g.itens.push(m);
     });
+    var PED_ICO = { analgesia:'soro', antiemetico:'estomago', cortico:'escudo', inalacao:'pulmao', 'atb-oral':'comprim', 'atb-ev':'seringa',
+      alergia:'alerta', emergencia:'perigo', digestivo:'estomago', antiacido:'estomago', antiespasmodico:'estomago', antiinflamatorio:'osso',
+      antiparasitario:'virus', tosse:'pulmao', laxante:'estomago', olhos:'gota', ouvido:'cabeca', convulsao:'cerebro', sedacao:'mente', hidratacao:'soro' };
+    if (celular() && dzPedCapa) {
+      return dzCapa(grupos.map(function (g) {
+        var m0 = g.itens[0] || {};
+        return { attr:'href="#" data-dz-pgrupo="' + esc(g.nome) + '"', nome:g.nome, icone:PED_ICO[m0.grupo] || 'seringa', conta:g.itens.length + (g.itens.length === 1 ? ' droga' : ' drogas') };
+      }), '', 'href="#" data-dz-pgrupo="az"', lista.length + ' drogas');
+    }
     var az = dzPedGrupo === 'az';
     var atual = grupos.filter(function (g) { return g.nome === dzPedGrupo; })[0] || (az ? null : grupos[0]);
     var itens = az ? lista.slice().sort(function (x, y) { return x.nome.localeCompare(y.nome, 'pt'); }) : atual.itens;
@@ -2209,50 +2436,154 @@
       return '<a href="#" data-dz-pgrupo="' + esc(g.nome) + '" class="' + (!az && g === atual ? 'on' : '') + '"><span class="dz2-rn">' + dois(k + 1) + '</span><b>' + esc(g.nome) + '</b><i>' + g.itens.length + (g.itens.length === 1 ? ' droga' : ' drogas') + '</i></a>';
     }).join('') + '<a href="#" data-dz-pgrupo="az" class="az' + (az ? ' on' : '') + '"><span>' + ICO('livro') + '</span><b>Todas A–Z</b><i>' + lista.length + ' drogas</i></a></nav>';
 
-    var cards = itens.map(function (m) {
-      var veta = P.vetado(m, idade);
-      var ds = (m.doses || []).map(function (d) {
-        var r = P.calc(m, d, kg);
-        var un = d.unid === 'UI' ? ' UI' : ' mg';
-        var faixa = d.mgkg != null ? br(d.mgkg) + (d.mgkgMax && d.mgkgMax !== d.mgkg ? '–' + br(d.mgkgMax) : '') + un + '/kg' : (d.fixa || '');
-        return '<div class="pd3-l">' +
-          '<span class="pd3-rot">' + esc(d.rot || 'Dose') + (d.freq ? '<i>' + esc(d.freq) + '</i>' : '') + '</span>' +
-          (r ? '<span class="pd3-val"><b>' + milhar(esc(r.vol || r.mg)) + '</b>' + (r.vol ? '<em>' + milhar(esc(r.mg)) + '</em>' : '') + (r.limitou ? '<i class="dz2-teto">teto</i>' : '') + '</span>'
-             : '<span class="pd3-val vazio"><b>' + esc(faixa) + '</b></span>') +
-          (r ? '<span class="pd3-f">' + milhar(esc(faixa)) + (d.maxMg ? ' · máx. ' + milhar(br(d.maxMg)) + un : '') +
-            (r.vol && P.conc && P.conc(m, d) ? ' · volume para ' + br(P.conc(m, d)) + (d.unid === 'UI' ? ' UI' : ' mg') + '/mL' : '') + '</span>' : '') +
-          /* a nota da dose traz o que não pode faltar: dose do DIA, UNIDADES, diluição, metade do volume… */
-          (function () {
-            var cUsada = P.conc ? P.conc(m, d) : null;
-            /* o usuário trocou o frasco: a nota original (que fala da diluição padrão) deixaria de valer */
-            if (cUsada && d.conc && +cUsada !== +d.conc)
-              return '<span class="pd3-nota forte">Volume recalculado para o frasco escolhido: ' + br(cUsada) + (d.unid === 'UI' ? ' UI' : ' mg') + '/mL.</span>';
-            return d.nota ? '<span class="pd3-nota' + (RE_NOTA_FORTE.test(d.nota) ? ' forte' : '') + '">' + esc(d.nota) + '</span>' : '';
-          })() +
-        '</div>';
-      }).join('');
-      return '<article class="dz2-card pd3' + (veta ? ' veto' : '') + '" data-busca="' + esc(normaliza(m.nome + ' ' + (m.apres || ''))) + '">' +
-        '<div class="dz2-c1"><b>' + esc(m.nome) + '</b>' + (m.via ? '<span class="dz2-via">' + esc(m.via) + '</span>' : '') +
-          (!veta && kg ? '<button type="button" class="dz2-bulico pd3-cp" data-dz-copiar="' + esc(m.id) + '" title="Copiar e mandar ao rascunho" aria-label="Copiar">' + ICO('copiar') + '</button>' : '') + '</div>' +
-        (m.apres ? '<p class="pd3-apres">' + esc(m.apres) + '</p>' : '') +
-        ((m.alt || []).length && !veta ? (function () {
-          var d0 = (m.doses || []).filter(function (d) { return d.conc; })[0];
-          var atualC = d0 && P.conc ? P.conc(m, d0) : null;
-          return '<div class="pd3-alt" role="group" aria-label="Apresentação usada no cálculo"><span>Frasco</span>' + m.alt.map(function (a) {
-            return '<button type="button" data-pconc="' + esc(m.id) + '" data-v="' + a[0] + '" class="' + (+a[0] === +atualC ? 'on' : '') + '">' + esc(a[1]) + '</button>';
-          }).join('') + '</div>';
-        })() : '') +
-        (m.atencao && !veta ? '<p class="pd3-atencao">' + ICO('alerta') + '<span>' + esc(m.atencao) + '</span></p>' : '') +
-        (veta ? '<p class="dz2-veto">' + ICO('alerta') + '<span><b>Não usar nesta idade.</b> ' + esc(m.veto.txt || '') + '</span></p>' : '<div class="pd3-doses">' + ds + '</div>') +
-        ((m.obs || []).length && !veta ? '<p class="dz2-obs" data-dz-obs title="Toque para ler tudo">' + m.obs.map(esc).join(' ') + '</p>' : '') +
-      '</article>';
-    }).join('');
+    pedTextos = {};
+    var cards = itens.map(function (m) { return cartaoPed4(m, kg, idade); }).join('');
 
     return '<div class="dz2-corpo">' + rail + '<div class="dz2-main">' +
+      (celular() ? dzVolta('href="#" data-dz-pcapa', az ? 'Todas as drogas A–Z' : atual.nome) : '') +
       '<h2 class="dz2-tit">' + (az ? 'Todas as drogas A–Z' : esc(atual.nome)) +
         '<span>' + (kg ? 'Volumes para ' + br(kg) + ' kg — confira a apresentação antes de aspirar' : 'Informe o peso no topo para ver cada dose em mL') + '</span></h2>' +
-      '<section class="rp-grupo dz2-bloco"><div class="dz2-grade pd3-grade">' + cards + '</div></section>' +
+      '<section class="rp-grupo dz2-bloco"><div class="pd4-grade">' + cards + '</div></section>' +
     '</div></div>';
+  }
+
+  /* ---------- cartão pediátrico (layout do designer, 25/09) ----------
+     Cada indicação: rótulo + faixa por kg, volume grande + intervalo por
+     extenso, mg por dose embaixo. Dose "dividida" (dividido de 8/8 h…) sai
+     POR TOMADA: teto diário primeiro, depois divide pelo número de tomadas.
+     Como no desenho, à vista só o volume, o intervalo e o veto por idade;
+     atenção, máximos, notas e UI ficam em "Detalhes e cuidados". */
+  var pedTextos = {}, pedAbertos = {};
+  function pdNum(x, casas) { return Number(x).toLocaleString('pt-BR', { maximumFractionDigits:casas }); }
+  function pdMg(x) { return pdNum(x, x >= 100 ? 0 : x >= 0.1 ? 2 : 3); }
+  function pdMl(x) { return pdNum(x, x >= 1 ? 1 : 2); }
+  function pdFaixa(lo, hi, f) { return f(lo) + (hi != null ? ' a ' + f(hi) : ''); }
+  /* "dividido de 8/8 h" vira dose de cada tomada; o resto só ganha texto por extenso */
+  function pdIntervalos(f) {
+    f = f || '';
+    if (/^dividido de /.test(f)) {
+      var hs = [];
+      f.replace(/(\d+)\/\1/g, function (t, h) { hs.push(+h); return t; });
+      if (hs.length) return hs.map(function (h) { return { txt:'de ' + h + ' em ' + h + ' horas', div:24 / h }; });
+    }
+    var s = f.replace(/(\d+)\/\1 a (\d+)\/\2 h/, 'de $1 em $1 ou $2 em $2 horas')
+      .replace(/(\d+)\/\1 h/, 'de $1 em $1 horas')
+      .replace(/1× ao dia/, '1 vez ao dia').replace(/(\d+)× ao dia/, '$1 vezes ao dia').replace(/1× /, '1 vez ')
+      .replace(/, (\d)/, ' · $1').replace(/ por (\d+ a \d+ dias)/, ' · $1')
+      .replace(/ se necessário/, ', se precisar').replace(/ conforme dor/, ' conforme a dor');
+    return [{ txt:s, div:1 }];
+  }
+  function pdCalc(m, d, kg, div, idade) {
+    var P = Ferramentas.ped, c = d.conc && P.conc ? P.conc(m, d) : null;
+    var un = d.unid === 'UI' ? ' UI' : ' mg';
+    var hiK = d.mgkgMax && d.mgkgMax !== d.mgkg ? d.mgkgMax : null;
+    /* faixas fixas por idade (meses) ou por peso (kg) — planilha */
+    if (d.porIdade || d.porPeso) {
+      var x = d.porIdade ? idade : kg;
+      if (x == null) return { calc:false, valor:d.regra, sub:d.porIdade ? 'Informe a idade para escolher a dose' : 'Informe o peso para escolher a dose' };
+      var fx = (d.porIdade || d.porPeso).filter(function (f) { return x >= f.min && x <= f.max; })[0];
+      return fx ? { calc:true, valor:fx.txt, sub:fx.rot } : { calc:false, valor:d.regra, sub:d.fora || 'Fora das faixas da planilha' };
+    }
+    /* quantidade por kg já na unidade de saída (mL ou gotas) — planilha */
+    if (d.porKg != null) {
+      var g = d.saida === 'gotas';
+      var fu = function (v) { return g ? String(Math.max(1, Math.round(v))) : pdMl(v); };
+      var uni = function (t) { return g ? (t === '1' ? ' gota' : ' gotas') : ' mL'; };
+      if (!kg) return { calc:false, valor:(d.regra || pdNum(d.porKg, 3) + (g ? ' gota' : ' mL') + '/kg') + (div > 1 ? ' por dia' : ''), sub:'Informe o peso para ver a dose' };
+      var v = kg * d.porKg / div, limK = false;
+      if (d.maxSaida && v > d.maxSaida) { v = d.maxSaida; limK = true; }
+      var vt = fu(v);
+      return { calc:true, valor:vt + uni(vt), sub:d.conc && !g ? pdMg(v * d.conc) + ' mg por dose' : '', mg:d.conc && !g ? pdMg(v * d.conc) + ' mg' : '', lim:limK };
+    }
+    if (d.mgkg == null) {
+      var mk = /^(\d+(?:,\d+)?)(?: a (\d+(?:,\d+)?))? mL\/kg$/.exec(d.fixa || '');
+      if (mk && kg) {
+        var a = kg * parseFloat(mk[1].replace(',', '.')), b = mk[2] ? kg * parseFloat(mk[2].replace(',', '.')) : null;
+        return { calc:true, valor:pdFaixa(a, b, pdMg) + ' mL', sub:d.fixa + ' para ' + pdNum(kg, 1) + ' kg' };
+      }
+      return { calc:false, valor:d.fixa || '—', sub:mk ? 'Informe o peso para ver o volume' : '' };
+    }
+    /* unid mL com conc 1000: o "mg/kg" da planilha já é mL/kg (SRO 75 mL/kg) */
+    if (d.unid === 'mL' && d.conc === 1000) {
+      if (!kg) return { calc:false, valor:pdFaixa(d.mgkg, hiK, function (x) { return pdNum(x, 2); }) + ' mL/kg', sub:'Informe o peso para ver o volume' };
+      return { calc:true, valor:pdFaixa(kg * d.mgkg, hiK ? kg * hiK : null, pdMg) + ' mL', sub:pdNum(d.mgkg, 2) + ' mL/kg' };
+    }
+    if (!kg) return { calc:false, valor:pdFaixa(d.mgkg, hiK, function (x) { return pdNum(x, 4); }) + un + '/kg' + (div > 1 ? '/dia' : ''),
+      sub:'Informe o peso para ver ' + (c ? 'o volume' : 'a dose') + ' de cada dose' };
+    var lo = kg * d.mgkg, hi = hiK ? kg * hiK : null, lim = false;
+    if (d.maxMg && lo > d.maxMg) { lo = d.maxMg; lim = true; }
+    if (d.maxMg && hi != null && hi > d.maxMg) { hi = d.maxMg; lim = true; }
+    if (hi != null && Math.abs(hi - lo) < 1e-9) hi = null;
+    var loD = lo / div, hiD = hi != null ? hi / div : null;
+    var mg = pdFaixa(loD, hiD, pdMg) + un;
+    return { calc:true, valor:c ? pdFaixa(loD / c, hiD != null ? hiD / c : null, pdMl) + ' mL' : mg, sub:c ? mg + ' por dose' : 'por dose', mg:c ? mg : '', lim:lim };
+  }
+  function pdRegra(d, div) {
+    if (d.porKg != null) return d.saida === 'gotas' && d.regra ? d.regra : pdNum(d.porKg, 3) + (d.saida === 'gotas' ? ' gota' : ' mL') + '/kg' + (div ? '/dia' : '/dose');
+    if (d.mgkg == null) return '';
+    var hiK = d.mgkgMax && d.mgkgMax !== d.mgkg ? d.mgkgMax : null;
+    if (d.unid === 'mL' && d.conc === 1000) return pdFaixa(d.mgkg, hiK, function (x) { return pdNum(x, 2); }) + ' mL/kg';
+    return pdFaixa(d.mgkg, hiK, function (x) { return pdNum(x, 4); }) + (d.unid === 'UI' ? ' UI' : ' mg') + '/kg' + (div ? '/dia' : '/dose');
+  }
+  /* a nota que mandava "dividir a dose do dia" perde o sentido quando a dose já sai por tomada */
+  function pdLimpaNota(n, div) {
+    if (!n) return '';
+    var t = n;
+    if (div || /dose do dia/i.test(t)) {
+      t = t.replace(/O valor mostrado é a dose do DIA[^.]*\./i, '')
+           .replace(/Dose do dia(?: em UNIDADES, não em mg)?(?:, [^.]*)?\./i, '')
+           .replace(/Divida em \d tomadas\./i, '');
+    }
+    return t.trim();
+  }
+  function cartaoPed4(m, kg, idade) {
+    var P = Ferramentas.ped, veta = P.vetado(m, idade), aberto = !!pedAbertos[m.id];
+    var copia = [m.nome + (m.apres ? ' — ' + m.apres : '') + (m.via ? ' (' + m.via + ')' : '')];
+    var regras = [], nDoses = (m.doses || []).length;
+    var doses = (m.doses || []).map(function (d) {
+      var ops = pdIntervalos(d.freq), div = ops.some(function (o) { return o.div > 1; });
+      var rot = div && /^Dose diária$/i.test(d.rot || '') ? 'Dose habitual' : (d.rot || 'Dose');
+      var regra = kg ? pdRegra(d, div) : '';
+      var linhas = ops.map(function (o) {
+        var r = pdCalc(m, d, kg, o.div, idade);
+        copia.push('  ' + rot + ': ' + r.valor + (r.mg ? ' (' + r.mg + ')' : '') + (o.txt ? ' ' + o.txt : ''));
+        return '<div class="pd4-op"><div class="pd4-v">' +
+            (r.calc ? '<b class="pd4-num">' + esc(r.valor) + '</b>' : '<b class="pd4-regra">' + esc(r.valor) + '</b>') +
+            (o.txt ? '<span class="pd4-freq">' + ICO('relogio') + '<span>' + esc(o.txt) + '</span></span>' : '') + '</div>' +
+          (r.sub || r.lim ? '<div class="pd4-sub">' + (r.sub ? '<span>' + esc(r.sub) + '</span>' : '') + (r.lim ? '<i class="pd4-max">dose máxima</i>' : '') + '</div>' : '') +
+        '</div>';
+      }).join('');
+      /* máximo, unidade e nota vão para "Detalhes e cuidados", como no desenho */
+      var un = d.unid === 'UI' ? ' UI' : ' mg', c = d.conc && P.conc ? P.conc(m, d) : null;
+      var nota = pdLimpaNota(d.nota, div);
+      if (c && d.conc && +c !== +d.conc) nota = 'Volume calculado para o frasco escolhido: ' + pdNum(c, 2) + un + '/mL.';
+      var extra = d.unid === 'UI' ? 'Dose em UNIDADES (UI), não em mg.' : '';
+      var max = '';
+      if (d.porKg != null && d.maxSaida) max = 'Máximo de ' + pdNum(d.maxSaida, 2) + (d.saida === 'gotas' ? ' gotas' : ' mL') + ' por dose';
+      else if (d.mgkg != null && d.maxMg && !(d.unid === 'mL' && d.conc === 1000)) max = 'Máximo de ' + pdNum(d.maxMg, 2) + un + (div ? ' por dia' : ' por dose');
+      if (max || extra || nota) regras.push('<div>' + (nDoses > 1 ? '<b>' + esc(rot) + '</b><br>' : '') + [max, extra, nota].filter(Boolean).map(esc).join('<br>') + '</div>');
+      return '<div class="pd4-dose"><p class="pd4-rot"><span>' + esc(rot) + '</span>' + (regra ? '<b>' + esc(regra) + '</b>' : '') + '</p>' + linhas + '</div>';
+    }).join('');
+    if (kg) copia.push('  (peso ' + pdNum(kg, 1) + ' kg)');
+    if (!veta && kg) pedTextos[m.id] = copia.join('\n');
+    var d0 = (m.doses || []).filter(function (d) { return d.conc; })[0];
+    var cAtual = d0 && P.conc ? P.conc(m, d0) : null;
+    var det = (m.atencao ? '<p class="pd4-alerta verm">' + ICO('alerta') + '<span>' + esc(m.atencao) + '</span></p>' : '') +
+      regras.join('') +
+      (m.idade && !/^Qualquer idade$/i.test(m.idade) ? '<div><b>Idade</b> · ' + esc(m.idade) + '</div>' : '') +
+      (m.obs || []).map(function (t) { return '<p>' + esc(t) + '</p>'; }).join('');
+    return '<article class="dz2-card pd4' + (veta ? ' veto' : '') + (aberto ? ' aberto' : '') + '" data-pd="' + esc(m.id) + '" data-busca="' + esc(normaliza(m.nome + ' ' + (m.apres || ''))) + '">' +
+      '<div class="pd4-top"><b>' + esc(m.nome) + '</b>' + (m.via ? '<span class="pd4-via">' + esc(m.via) + '</span>' : '') +
+        (!veta && kg ? '<button type="button" class="pd4-cp" data-dz-copiar="' + esc(m.id) + '" title="Copiar e mandar ao rascunho" aria-label="Copiar">' + ICO('copiar') + '</button>' : '') + '</div>' +
+      (m.apres ? '<p class="pd4-apres">' + esc(m.apres) + '</p>' : '') +
+      ((m.alt || []).length && !veta ? '<div class="pd4-alt" role="group" aria-label="Frasco usado no cálculo"><span>Frasco</span>' + m.alt.map(function (a) {
+        return '<button type="button" data-pconc="' + esc(m.id) + '" data-v="' + a[0] + '" class="' + (+a[0] === +cAtual ? 'on' : '') + '">' + esc(a[1]) + '</button>';
+      }).join('') + '</div>' : '') +
+      (veta ? '<p class="pd4-veto">' + ICO('alerta') + '<span><b>Não usar nesta idade.</b> ' + esc(m.veto.txt || '') + '</span></p>' :
+        '<div class="pd4-doses">' + doses + '</div>' +
+        (det ? '<button type="button" class="pd4-det" data-pd-det="' + esc(m.id) + '" aria-expanded="' + aberto + '">' + ICO('setaDir') + '<span>' + (aberto ? 'Fechar detalhes' : 'Detalhes e cuidados') + '</span></button>' +
+          '<div class="pd4-det-corpo">' + det + '</div>' : '')) +
+    '</article>';
   }
   /* troca a apresentação (frasco) usada no cálculo pediátrico, sem perder a rolagem */
   doc.addEventListener('click', function (e) {
@@ -2267,8 +2598,9 @@
     var t = e.target.closest('[data-dz-pgrupo]');
     if (!t) return;
     e.preventDefault();
-    dzPedGrupo = t.dataset.dzPgrupo; grava('pref:dz-ped-grupo', dzPedGrupo);
+    dzPedGrupo = t.dataset.dzPgrupo; grava('pref:dz-ped-grupo', dzPedGrupo); dzPedCapa = false;
     renderDosesNovo();
+    if (celular()) window.scrollTo(0, 0);
     var m = doc.querySelector('.dz2-corpo'); if (m && m.getBoundingClientRect().top < 0) window.scrollTo({ top:m.getBoundingClientRect().top + window.scrollY - 12, behavior:'smooth' });
   });
 
@@ -2276,10 +2608,21 @@
     var t;
     if ((t = e.target.closest('[data-dg-volta]')) && history.length > 1) { e.preventDefault(); history.back(); return; }
     if ((t = e.target.closest('[data-dz-obs]'))) { t.classList.toggle('aberta'); return; }
+    if ((t = e.target.closest('[data-dz-pcapa]'))) { e.preventDefault(); dzPedCapa = true; renderDosesNovo(); window.scrollTo(0, 0); return; }
     if ((t = e.target.closest('[data-dz-modo]'))) { dzModo = t.dataset.dzModo; grava('pref:dz-modo', dzModo); renderDosesNovo(); return; }
+    if ((t = e.target.closest('[data-pd-det]'))) {
+      var card = t.closest('.pd4'), id = t.dataset.pdDet;
+      pedAbertos[id] = !pedAbertos[id];
+      if (card) card.classList.toggle('aberto', pedAbertos[id]);
+      t.setAttribute('aria-expanded', String(pedAbertos[id]));
+      t.querySelector('span').textContent = pedAbertos[id] ? 'Fechar detalhes' : 'Detalhes e cuidados';
+      return;
+    }
     if ((t = e.target.closest('[data-dz-copiar]'))) {
-      var m = Ferramentas.ped.lista().filter(function (x) { return x.id === t.dataset.dzCopiar; })[0];
-      if (m) Ferramentas.ped.copiar(m, pesoAtual());
+      var m = pedLista().filter(function (x) { return x.id === t.dataset.dzCopiar; })[0];
+      /* o texto copiado é o mesmo da tela (dose por tomada); sem ele, cai no texto antigo */
+      if (m && pedTextos[m.id]) Ferramentas.copiarRx(pedTextos[m.id], m.nome);
+      else if (m) Ferramentas.ped.copiar(m, pesoAtual());
       t.classList.add('ok'); setTimeout(function () { t.classList.remove('ok'); }, 1400);
     }
   });
@@ -2348,7 +2691,7 @@
         (lado.length ? '<aside class="cd-lado">' + lado.map(function (x) { return cdCartao(x.s, x.k); }).join('') + '</aside>' : '') +
       '</div>';
     }
-    if (resto.length) html += '<div class="cd-resto">' + resto.map(function (x) { return cdCartao(x.s, x.k); }).join('') + '</div>';
+    if (resto.length) html += '<div class="cd-resto">' + resto.map(function (x) { return cdCartao(x.s, x.k, true); }).join('') + '</div>';
 
     html += '<p class="cd-aviso">' + ICO('alerta') + '<span>Apoio à decisão, sem revisão clínica formal. Confira dose, apresentação e diretriz vigente antes de prescrever.' +
       (p.fonte ? ' <b>Referência:</b> ' + esc(p.fonte) + '.' : '') + '</span></p>';
@@ -2362,10 +2705,15 @@
     if (!b) return;
     var alvo = document.getElementById(b.dataset.cdIr);
     if (!alvo) return;
+    if (alvo.classList.contains('cd-dobra') && !alvo.classList.contains('aberto')) cdAlterna(alvo, true);
     var barra = doc.querySelector('.cd-barra');
-    window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - (barra ? barra.offsetHeight + 14 : 14), behavior: 'smooth' });
+    var folga = celular() ? barraVisivel(barra) + 12 : (barra ? barra.offsetHeight + 14 : 14);
+    window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - folga, behavior: 'smooth' });
     alvo.classList.remove('pisca'); void alvo.offsetWidth; alvo.classList.add('pisca');
   });
+
+  /* celular: a mesma quebra do CSS (760 px) */
+  function celular() { return !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches); }
 
   /* ---------- dados comuns às versões de home ---------- */
   function homeDados() {
@@ -2438,11 +2786,12 @@
     var pesoV = (document.getElementById('peso') || {}).value || '';
 
     function coluna(o) {
-      return '<section class="tz-col ' + o.cor + '">' +
+      return '<section class="tz-col ' + o.cor + (o.cls ? ' ' + o.cls : '') + '">' +
         '<a class="tz-col-cab" href="' + esc(o.href) + '">' +
           '<span class="tz-nivel">' + esc(o.nivel) + '<i>' + esc(o.tempo) + '</i></span>' +
           '<b>' + esc(o.titulo) + '</b>' +
           '<span class="tz-num">' + o.n + '</span>' +
+          '<span class="tz-seta" aria-hidden="true">' + ICO('setaDir') + '</span>' +
         '</a>' +
         '<div class="tz-lista">' + o.itens + '</div>' +
         (o.rodape ? '<a class="tz-ver" href="' + esc(o.href) + '">' + esc(o.rodape) + ICO('setaDir') + '</a>' : '') +
@@ -2461,14 +2810,13 @@
           '<div class="tz-acoes">' +
             '<button type="button" class="tz-bt" data-proxy="btnBancTop" title="Rascunho">' + ICO('empilhar') + '</button>' +
             '<button type="button" class="tz-bt" data-proxy="btnTema" title="Modo noturno">' + ICO('lua') + '</button>' +
-            '<button type="button" class="tz-bt" data-proxy="btnAjustes" title="Ajustes">' + ICO('ajustes') + '</button>' +
+            '<button type="button" class="tz-bt" data-proxy="btnAjustes" title="Configurações">' + ICO('ajustes') + '</button>' +
           '</div>' +
         '</div>' +
         '<div class="tz-l2 so">' +
           '<div class="tz-pergunta">' +
             '<p>' + ola(d) + ' <em>·</em> ' + esc(dataHoje()) + '</p>' +
-            '<h1>Qual a prioridade <br>do paciente?</h1>' +
-            campoBusca('tz-busca', 'Busque conduta, droga, dose ou receita') +
+            campoBusca('tz-busca', celular() ? 'Buscar conduta, droga ou dose' : 'Busque conduta, droga, dose ou receita') +
           '</div>' +
         '</div>' +
       '</header>' +
@@ -2483,11 +2831,19 @@
         coluna({ cor:'verde', nivel:'Pouco urgente', tempo:'copiar e alta', titulo:'Receita pronta', n:rx.length, href:'#presc',
           itens:rx.slice(0, 7).map(function (q) { return item('#presc', q.nome, '<i class="tz-rx">Rx</i>', ' data-abre="quadro:' + esc(q.id) + '"'); }).join(''),
           rodape:'Todas as prescrições' }) +
-        coluna({ cor:'escuro', nivel:'Guia clínico', tempo:'por área', titulo:'Condutas', n:d.total, href:'#' + (d.areas[0] ? d.areas[0].c.id : ''),
+        coluna({ cor:'escuro', nivel:'Guia clínico', tempo:'por área', titulo:'Condutas', n:d.total, href:celular() ? '#guia' : '#' + (d.areas[0] ? d.areas[0].c.id : ''),
           itens:d.areas.map(function (x) { return item('#' + x.c.id, x.c.nome, '<i class="tz-ct">' + x.n + '</i>'); }).join('') }) +
-        coluna({ cor:'azul', nivel:'Consulta', tempo:'cálculo e modelo', titulo:'Ferramentas', n:Ferramentas.secoes.length + 1, href:'#doses',
+        coluna({ cor:'azul', cls:'tz-ferr', nivel:'Consulta', tempo:'cálculo e modelo', titulo:'Ferramentas', n:Ferramentas.secoes.length + 1, href:'#doses',
           itens:item('#doses', 'Doses e pediatria') + Ferramentas.secoes.filter(function (s) { return s.id !== 'presc' && s.id !== 'pediatria'; }).map(function (s) { return item('#' + s.id, s.nome); }).join('') }) +
       '</div>';
+
+    /* celular: a coluna Ferramentas vira um cartão por ferramenta, um toque só */
+    var atalhos = [{ href:'#doses', nome:'Doses e pediatria', ico:'seringa' }].concat(
+      Ferramentas.secoes.filter(function (s) { return s.id !== 'presc' && s.id !== 'pediatria'; })
+        .map(function (s) { return { href:'#' + s.id, nome:s.nome, ico:s.icone }; }));
+    html += '<nav class="tz-atalhos" aria-label="Ferramentas"><h2>Ferramentas</h2>' + atalhos.map(function (a) {
+      return '<a class="tz-at" href="' + esc(a.href) + '"><b>' + esc(a.nome) + '</b>' + ICO(a.ico) + '</a>';
+    }).join('') + '</nav>';
 
     html += '</section>';
     return html;
@@ -2516,7 +2872,7 @@
     el.textContent = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
   }, 20000);
   doc.addEventListener('input', function (e) {
-    if (e.target.id !== 'svFiltro') return;
+    if (e.target.id !== 'svFiltro' || doc.querySelector('.dz2')) return;
     var q = normaliza(e.target.value.trim()), algum = false;
     doc.querySelectorAll('.sv9-g, .rx-grupo').forEach(function (g) {
       var vis = 0;
@@ -2538,8 +2894,27 @@
     var alvo = document.getElementById('svg-' + b.dataset.svIr);
     if (!alvo) return;
     var barra = doc.querySelector('.sv9-barra');
-    window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - (barra ? barra.offsetHeight + 16 : 16), behavior: 'smooth' });
+    var folga = celular() ? barraVisivel(barra) + 12 : (barra ? barra.offsetHeight + 16 : 16);
+    window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - folga, behavior: 'smooth' });
     alvo.classList.remove('pisca'); void alvo.offsetWidth; alvo.classList.add('pisca');
+  });
+  /* peso digitado na ficha da droga (busca): vale para o guia inteiro e recalcula as doses pediátricas */
+  var bzPesoTimer = null;
+  doc.addEventListener('input', function (e) {
+    if (e.target.id !== 'bzPeso') return;
+    var p = document.getElementById('peso');
+    if (!p) return;
+    p.value = e.target.value.replace(',', '.').replace(/[^0-9.]/g, '');
+    clearTimeout(bzPesoTimer);
+    var pos = e.target.selectionStart;
+    bzPesoTimer = setTimeout(function () {
+      p.dispatchEvent(new Event('input', { bubbles:true }));
+      var y = window.scrollY;
+      render();
+      window.scrollTo(0, y);
+      var el = document.getElementById('bzPeso');
+      if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) {} }
+    }, 450);
   });
   doc.addEventListener('input', function (e) {
     if (e.target.id !== 'tzPeso') return;
@@ -2766,10 +3141,251 @@
   }
 
 
+  /* ---------- CONFIGURAÇÕES: página inteira, no mesmo console ----------
+     Perfil → aparência → leitura → prescrição → validação → dados → sobre.
+     Tudo grava neste aparelho na hora: não existe botão "salvar". */
+  var AJ_SECS = [
+    { id:'aj-perfil',    nome:'Perfil',             ico:'pessoa' },
+    { id:'aj-aparencia', nome:'Aparência',          ico:'lua' },
+    { id:'aj-leitura',   nome:'Leitura',            ico:'livro' },
+    { id:'aj-presc',     nome:'Prescrição e cópia', ico:'receita' },
+    { id:'aj-valid',     nome:'Validação clínica',  ico:'escudo' },
+    { id:'aj-dados',     nome:'Seus dados',         ico:'empilhar' },
+    { id:'aj-sobre',     nome:'Sobre',              ico:'engren' }
+  ];
+  var AJ_SIM = '<svg viewBox="-4 -4 56 56" fill="none" aria-hidden="true"><mask id="maAj" maskUnits="userSpaceOnUse" x="-4" y="-4" width="56" height="56"><rect x="-4" y="-4" width="56" height="56" fill="#fff"/><path d="M22 28H37" stroke="#000" stroke-width="10"/></mask><g stroke="currentColor" stroke-width="4.6" stroke-linecap="round"><path d="M2.5 40H8L21 7L34 40" stroke-linejoin="miter" stroke-miterlimit="10" mask="url(#maAj)"/><path d="M12.7 28H44.5" stroke-linejoin="round"/><path d="M39 22.5L44.5 28L39 33.5" stroke-linejoin="round"/></g></svg>';
+  function ajIniciais(n) {
+    var p = String(n || '').replace(/^dra?\.?\s+/i, '').trim().split(/\s+/).filter(Boolean);
+    return p.length ? (p[0].charAt(0) + (p[1] ? p[1].charAt(0) : '')).toUpperCase() : '';
+  }
+  function ajSec(id, titulo, sub, corpo) {
+    return '<section class="aj-sec" id="' + id + '"><header class="aj-sec-cab"><h2>' + esc(titulo) + '</h2>' +
+      (sub ? '<p>' + esc(sub) + '</p>' : '') + '</header>' + corpo + '</section>';
+  }
+  function ajSw(k, titulo, sub) {
+    var on = !!pref(k, false);
+    return '<label class="aj-row aj-tg">' +
+      '<span class="aj-rt"><b>' + esc(titulo) + '</b><span>' + esc(sub) + '</span></span>' +
+      '<input type="checkbox" role="switch" class="aj-sw-in" data-aj-pref="' + k + '"' + (on ? ' checked' : '') + '>' +
+      '<span class="aj-sw" aria-hidden="true"></span></label>';
+  }
+  function ajSeg(k, titulo, sub, opcoes, atual) {
+    return '<div class="aj-row">' +
+      '<span class="aj-rt"><b>' + esc(titulo) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</span>' +
+      '<div class="aj-seg" role="radiogroup" aria-label="' + esc(titulo) + '">' + opcoes.map(function (o) {
+        var on = String(o[0]) === String(atual);
+        return '<button type="button" role="radio" aria-checked="' + on + '"' + (on ? ' class="on"' : '') +
+          ' data-aj-set="' + k + '" data-v="' + esc(o[0]) + '">' + o[1] + '</button>';
+      }).join('') + '</div></div>';
+  }
+  function ajTema(v, nome, sub, atual) {
+    var on = v === atual;
+    return '<button type="button" role="radio" aria-checked="' + on + '" class="aj-tema t-' + v + (on ? ' on' : '') + '" data-aj-tema="' + v + '">' +
+      '<span class="aj-tema-mini" aria-hidden="true"><i class="m-bar"></i><i class="m-l1"></i><i class="m-l2"></i><i class="m-card"></i></span>' +
+      '<span class="aj-tema-txt"><b>' + esc(nome) + '</b><span>' + esc(sub) + '</span></span>' +
+      '<span class="aj-tema-ok">' + ICO('check') + '</span></button>';
+  }
+  function ajSaudacao(n) { return esc(saudacao()) + (n ? ', <em>' + esc(n) + '</em>' : ''); }
+
+  function renderAjustes() {
+    var nome = nomeMedico(), ini = ajIniciais(nome), tema = temaEscolhido();
+    var zoom = Number(pref('zoom', 1)) || 1;
+    var resp = String(pref('responsavel', '') || '').trim(), respData = pref('responsavel-data', '');
+    var nFav = (favoritas || []).length, nRec = recentes().length, nEd = 0;
+    try { for (var i = 0; i < localStorage.length; i++) { if ((localStorage.key(i) || '').indexOf('ferr:') === 0) nEd++; } } catch (e) {}
+
+    var h = '<section class="tz sv9 aj pg-azul">' +
+      '<header class="sv9-barra aj-barra"><div class="sv9-b1">' +
+        '<a class="sv9-volta" href="#" aria-label="Voltar ao início">' + ICO('setaEsq') + '</a>' +
+        '<div class="cd-tit"><h1>Configurações</h1><p>Tudo fica salvo neste aparelho, na hora.</p></div>' +
+        '<span class="aj-off" id="ajOff"><i></i><span>Verificando…</span></span>' +
+      '</div></header>' +
+      '<div class="aj-grade">' +
+        '<nav class="aj-nav" aria-label="Seções das configurações">' + AJ_SECS.map(function (s, k) {
+          return '<button type="button" data-aj-ir="' + s.id + '"' + (k === 0 ? ' class="on"' : '') + '>' + ICO(s.ico) + '<span>' + esc(s.nome) + '</span></button>';
+        }).join('') + '</nav>' +
+        '<div class="aj-corpo">';
+
+    h += ajSec('aj-perfil', 'Perfil', 'Como o MedAtalho fala com você.',
+      '<div class="aj-card aj-perfil">' +
+        '<span class="aj-av" id="ajAv">' + (ini ? esc(ini) : ICO('pessoa')) + '</span>' +
+        '<label class="aj-campo"><span>Como quer ser chamado</span>' +
+          '<input type="text" id="ajNome" maxlength="40" autocomplete="off" placeholder="Dr. Gustavo" value="' + esc(nome) + '"></label>' +
+        '<div class="aj-previa"><span>Na tela inicial</span><b id="ajPrevia">' + ajSaudacao(nome) + '</b></div>' +
+      '</div>');
+
+    h += ajSec('aj-aparencia', 'Aparência', 'Para ler rápido de dia ou às 3 da manhã.',
+      '<div class="aj-card">' +
+        '<div class="aj-row aj-col"><span class="aj-rt"><b>Tema</b><span>O automático escurece a tela das 19h às 7h, sem você precisar mexer.</span></span>' +
+          '<div class="aj-temas" role="radiogroup" aria-label="Tema">' +
+            ajTema('claro', 'Claro', 'Padrão', tema) +
+            ajTema('escuro', 'Escuro', 'Sempre noturno', tema) +
+            ajTema('auto', 'Automático', 'Escuro das 19h às 7h', tema) +
+          '</div></div>' +
+        ajSeg('zoom', 'Tamanho do texto', 'Aumenta letras e botões de todo o guia.',
+          [[1, '<i class="z1">Aa</i>Padrão'], [1.12, '<i class="z2">Aa</i>Grande'], [1.25, '<i class="z3">Aa</i>Maior']], zoom) +
+      '</div>');
+
+    h += ajSec('aj-leitura', 'Leitura das condutas', 'O que aparece aberto quando você entra numa conduta.',
+      '<div class="aj-card">' +
+        ajSw('resumo', 'Só o essencial', 'Fecha os blocos de leitura em todo o guia. O fluxograma nunca fecha.') +
+        ajSw('autor', 'Modo autor', 'Mostra as condutas ainda não preenchidas e o progresso de cada área.') +
+      '</div>');
+
+    h += ajSec('aj-presc', 'Prescrição e cópia', 'Como receitas e doses abrem, e o que acontece ao copiar.',
+      '<div class="aj-card">' +
+        ajSeg('rp-modo', 'Receitas abrem em', '', [['casa', 'Para casa'], ['porta', 'Na unidade']], rxModo) +
+        ajSeg('dz-modo', 'Doses abrem em', '', [['adulto', 'Adulto'], ['ped', 'Pediatria']], dzModo) +
+        ajSw('conferir', 'Conferir antes de copiar', 'Checklist de peso, alergia, função renal e gestação antes de cada cópia.') +
+        ajSw('rx-ajustes', 'Ajustes na prescrição', 'Caixas para tirar itens, atalhos de posologia e sintomáticos dentro do quadro.') +
+      '</div>');
+
+    h += ajSec('aj-valid', 'Validação clínica', 'Quem revisou o conteúdo usado neste aparelho.',
+      '<div class="aj-card">' +
+        '<div class="aj-selo ' + (resp ? 'ok' : 'pend') + '">' + ICO(resp ? 'check' : 'alerta') +
+          '<span><b>' + (resp ? 'Revisado por ' + esc(resp) : 'Conteúdo ainda não validado') + '</b>' +
+          '<span>' + (resp ? 'Registrado em ' + esc(respData || '—') + '. O aviso de conteúdo não validado deixou de aparecer nas condutas.'
+                           : 'Enquanto ninguém assinar, toda conduta mostra o aviso de conteúdo não validado.') + '</span></span></div>' +
+        '<label class="aj-row aj-col"><span class="aj-rt"><b>Responsável técnico</b><span>Nome e CRM de quem revisou. Apague para voltar a mostrar o aviso.</span></span>' +
+          '<input type="text" id="ajResp" maxlength="80" autocomplete="off" placeholder="Dra. Ana Souza · CRM 12345" value="' + esc(resp) + '"></label>' +
+      '</div>');
+
+    h += ajSec('aj-dados', 'Seus dados', 'Nada sai deste aparelho sem você exportar.',
+      '<div class="aj-card">' +
+        '<div class="aj-nums">' +
+          '<div><b>' + nFav + '</b><span>Favoritas</span></div>' +
+          '<div><b>' + nRec + '</b><span>Abertas há pouco</span></div>' +
+          '<div><b>' + nEd + '</b><span>Edições</span></div>' +
+        '</div>' +
+        '<div class="aj-row"><span class="aj-rt"><b>Backup</b><span>Leve favoritas, modelos e preferências para outro aparelho.</span></span>' +
+          '<div class="aj-bts"><button type="button" class="aj-bt forte" data-aj-acao="exportar">Exportar</button>' +
+          '<button type="button" class="aj-bt" data-aj-acao="importar">Importar</button></div></div>' +
+        '<div class="aj-row"><span class="aj-rt"><b>Histórico</b><span>As condutas abertas há pouco, que aparecem em Meu plantão.</span></span>' +
+          '<div class="aj-bts"><button type="button" class="aj-bt" data-aj-acao="limpar-rec"' + (nRec ? '' : ' disabled') + '>Limpar histórico</button></div></div>' +
+      '</div>' +
+      '<div class="aj-card aj-perigo">' +
+        '<div class="aj-row"><span class="aj-rt"><b>Apagar tudo deste aparelho</b><span>Edições, favoritas, histórico e preferências. O conteúdo do guia volta ao padrão e não dá para desfazer.</span></span>' +
+          '<div class="aj-bts"><button type="button" class="aj-bt perigo" data-aj-acao="zerar">' + ICO('lixo') + 'Apagar tudo</button></div></div>' +
+      '</div>');
+
+    h += ajSec('aj-sobre', 'Sobre', '',
+      '<div class="aj-card">' +
+        '<div class="aj-marca"><span class="aj-marca-sim">' + AJ_SIM + '</span>' +
+          '<span class="aj-marca-t"><b>MedAtalho</b><span>O atalho do plantão</span></span><i class="aj-ver" id="ajVer"></i></div>' +
+        '<div class="aj-row"><span class="aj-rt"><b>Uso sem internet</b><span id="ajOffTxt">Verificando…</span></span>' +
+          '<div class="aj-bts"><button type="button" class="aj-bt" data-aj-acao="atualizar">Procurar atualização</button></div></div>' +
+        '<p class="aj-aviso">' + ICO('alerta') + '<span>Apoio à decisão, redigido a partir de diretrizes brasileiras. Confira dose, apresentação e diretriz vigente antes de prescrever.</span></p>' +
+      '</div>');
+
+    doc.innerHTML = h + '</div></div></section>';
+    ajDepois();
+  }
+
+  var ajObs = null;
+  function ajDepois() {
+    var on = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+    var chip = document.getElementById('ajOff'), txt = document.getElementById('ajOffTxt');
+    if (chip) { chip.classList.toggle('ok', on); chip.lastChild.textContent = on ? 'Pronto sem internet' : 'Só online aqui'; }
+    if (txt) txt.textContent = on ? 'O guia inteiro está guardado neste aparelho e abre mesmo sem rede.'
+                                  : 'O modo offline liga quando o app é aberto pelo endereço publicado.';
+    var ver = document.getElementById('ajVer');
+    if (ver && window.caches && caches.keys) caches.keys().then(function (ks) {
+      var v = ks.map(function (k) { var m = /v(\d+)/i.exec(k); return m ? +m[1] : 0; }).sort(function (x, y) { return y - x; })[0];
+      if (v) ver.textContent = 'versão ' + v;
+    }).catch(function () {});
+    if (ajObs) { ajObs.disconnect(); ajObs = null; }
+    if (!('IntersectionObserver' in window)) return;
+    ajObs = new IntersectionObserver(function (es) {
+      es.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        [].forEach.call(document.querySelectorAll('.aj-nav button'), function (b) { b.classList.toggle('on', b.dataset.ajIr === en.target.id); });
+      });
+    }, { rootMargin:'-25% 0px -65% 0px' });
+    [].forEach.call(document.querySelectorAll('.aj-sec'), function (s) { ajObs.observe(s); });
+  }
+  function ajAviso(t, erro) { if (window.UI && UI.aviso) UI.aviso(t, erro); }
+
+  doc.addEventListener('click', function (e) {
+    if (modo !== 'ajustes') return;
+    var t;
+    if ((t = e.target.closest('[data-aj-ir]'))) {
+      var alvo = document.getElementById(t.dataset.ajIr);
+      if (alvo) window.scrollTo({ top:alvo.getBoundingClientRect().top + window.scrollY - 16, behavior:'smooth' });
+      return;
+    }
+    if ((t = e.target.closest('[data-aj-tema]'))) {
+      var y = window.scrollY; defineTema(t.dataset.ajTema); renderAjustes(); window.scrollTo(0, y); return;
+    }
+    if ((t = e.target.closest('[data-aj-set]'))) {
+      var k = t.dataset.ajSet, v = t.dataset.v;
+      if (k === 'zoom') {
+        v = Number(v) || 1; grava('pref:zoom', v);
+        if (v > 1) document.documentElement.style.setProperty('--zoom', v); else document.documentElement.style.removeProperty('--zoom');
+      } else if (k === 'rp-modo') { rxModo = v; grava('pref:rp-modo', v); }
+      else if (k === 'dz-modo') { dzModo = v; grava('pref:dz-modo', v); }
+      [].forEach.call(t.parentNode.children, function (b) { var on = b === t; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
+      ajAviso('Salvo');
+      return;
+    }
+    if ((t = e.target.closest('[data-aj-acao]'))) {
+      var a = t.dataset.ajAcao;
+      var velho = { exportar:'btnExportar', importar:'btnImportar', zerar:'btnZerar' }[a];
+      if (velho) { var bv = document.getElementById(velho); if (bv) bv.click(); return; }
+      if (a === 'limpar-rec') { grava('recentes', []); ajAviso('Histórico limpo'); renderAjustes(); return; }
+      if (a === 'atualizar') {
+        if (!navigator.serviceWorker || !navigator.serviceWorker.getRegistration) { ajAviso('Este navegador não guarda o app offline'); return; }
+        t.disabled = true; t.textContent = 'Procurando…';
+        navigator.serviceWorker.getRegistration().then(function (r) {
+          if (!r) { ajAviso('Modo offline ainda não ligado neste endereço'); return; }
+          return r.update().then(function () {
+            ajAviso(r.installing || r.waiting ? 'Versão nova chegando — o app avisa quando estiver pronta' : 'Você já está na versão mais recente');
+          });
+        }).catch(function () { ajAviso('Sem conexão para procurar agora', true); })
+          .then(function () { t.disabled = false; t.textContent = 'Procurar atualização'; });
+      }
+    }
+  });
+  doc.addEventListener('change', function (e) {
+    if (modo !== 'ajustes') return;
+    var t = e.target;
+    if (t.matches('[data-aj-pref]')) {
+      var k = t.dataset.ajPref, on = t.checked;
+      grava('pref:' + k, on);
+      if (k === 'autor') document.body.classList.toggle('autor', on);
+      if (k === 'rx-ajustes') document.body.classList.toggle('rx-ajustes', on);
+      if (k === 'resumo') { if (on) soEssencial(); else tudoVisivel(); }
+      var espelho = document.getElementById({ autor:'optAutor', resumo:'optResumo', conferir:'optConferir', 'rx-ajustes':'optRxAjustes' }[k]);
+      if (espelho) espelho.checked = on;
+      ajAviso(on ? 'Ligado' : 'Desligado');
+      return;
+    }
+    if (t.id === 'ajNome') {
+      var n = t.value.trim(); grava('pref:nome', n);
+      var en = document.getElementById('optNome'); if (en) en.value = n;
+      ajAviso('Salvo'); return;
+    }
+    if (t.id === 'ajResp') {
+      var r = t.value.trim();
+      grava('pref:responsavel', r);
+      grava('pref:responsavel-data', r ? new Date().toLocaleDateString('pt-BR') : '');
+      var er = document.getElementById('optResponsavel'); if (er) er.value = r;
+      var y = window.scrollY; renderAjustes(); window.scrollTo(0, y);
+      ajAviso(r ? 'Validação registrada' : 'Validação removida');
+    }
+  });
+  doc.addEventListener('input', function (e) {
+    if (modo !== 'ajustes' || e.target.id !== 'ajNome') return;
+    var n = e.target.value.trim();
+    var p = document.getElementById('ajPrevia'); if (p) p.innerHTML = ajSaudacao(n);
+    var av = document.getElementById('ajAv'); if (av) { var i = ajIniciais(n); av.innerHTML = i ? esc(i) : ICO('pessoa'); }
+  });
+
   function renderDoc(resultados) {
     if (resultados) { renderBusca(resultados); return; }
     if (modo === 'home')      { renderHome(); return; }
     if (modo === 'favoritas') { renderFavoritas(); return; }
+    if (modo === 'ajustes')   { renderAjustes(); return; }
+    if (modo === 'areas')     { renderAreas(); return; }
     if (modo === 'urgencias') { renderUrgencias(); return; }
     if (modo === 'doses') { renderDosesNovo(); return; }
     if (modo === 'droga') { renderDroga(drogaAtual); return; }
@@ -2792,8 +3408,10 @@
             '<div class="sv9-b1">' +
               '<a class="sv9-volta" href="' + (filha ? '#' + sec.id : '#') + '" aria-label="Voltar">' + ICO('setaEsq') + '</a>' +
               '<div class="cd-tit"><h1>' + esc(filha ? filha.nome : sec.nome) + '</h1>' + (filha ? '<p>' + esc(sec.nome) + '</p>' : '') + '</div>' +
-              '<nav class="fr-secs">' + Ferramentas.secoes.filter(function (s) { return s.id !== 'pediatria'; }).map(function (s) {
-                return '<a href="#' + s.id + '" class="' + (s.id === sec.id ? 'on' : '') + '" title="' + esc(s.nome) + '">' + ICO(s.icone) + '<span>' + esc(s.nome) + '</span></a>';
+              '<nav class="fr-secs">' + [{ id:'doses', nome:'Doses e pediatria', icone:'seringa' }].concat(Ferramentas.secoes.filter(function (s) { return s.id !== 'pediatria' && s.id !== 'presc'; })).map(function (s) {
+                var curto = { doses:'Doses', presc:'Receitas', eletrolitos:'Eletrólitos', calc:'Cálculos', calculadoras:'Cálculos', scores:'Scores', prontuario:'Prontuário' }[s.id] || s.nome;
+                return '<a href="#' + s.id + '" class="' + (s.id === sec.id ? 'on' : '') + '" title="' + esc(s.nome) + '"' + (s.id === sec.id ? ' aria-current="page"' : '') + '>' + ICO(s.icone) +
+                  '<span class="fr-sl">' + esc(s.nome) + '</span><span class="fr-sc">' + esc(curto) + '</span></a>';
               }).join('') + '</nav>' +
               '<button type="button" class="tz-bt" data-proxy="btnBancTop" title="Rascunho">' + ICO('empilhar') + '</button>' +
             '</div>' +
@@ -2837,6 +3455,7 @@
     var lista = listaArea(c.id);
     var todas = porCategoria(c.id);
     var gAtual = subAtual && acharSub(c.id, subAtual);
+    var cel = celular(), todasHash = /\/todas$/.test(location.hash);
     function itG(p) {
       var g = p.gravidade || 'rotina';
       return { href:hrefConduta(p), titulo:p.titulo, sub:p.resumo ? cru(p.resumo) : '', cls:'g-' + g };
@@ -2859,22 +3478,109 @@
       return '<option value="' + esc(x.id) + '"' + (x.id === c.id ? ' selected' : '') + '>' + esc(x.nome) + '</option>';
     }).join('') + '</select>' + ICO('setaBai') + '</label>';
     var legenda = '<div class="pg-legenda"><span class="g-emergencia"><i></i>Emergência</span><span class="g-urgencia"><i></i>Urgência</span><span class="g-rotina"><i></i>Rotina</span></div>';
-    var html = painel({ cor:'azul', titulo:gAtual ? gAtual.nome : 'Guia clínico', volta:gAtual ? '#' + c.id : '#',
-      extra:seletor, legenda:legenda, ph:'Filtrar em ' + c.nome + '…', grupos:grupos });
-    if (!lista.length) html = html.replace('<div class="sv9-quadro"></div>', '<div class="pendente">Esta área ainda não tem conduta preenchida. Ligue o <b>modo autor</b> nos ajustes para ver as ' + todas.length + ' pendentes.</div>');
+    var html = painel({ cor:'azul', titulo:gAtual ? gAtual.nome : (cel ? c.nome : 'Guia clínico'),
+      volta:gAtual || (cel && todasHash) ? '#' + c.id : (cel ? '#guia' : '#'),
+      extra:cel ? '' : seletor, legenda:legenda, ph:'Filtrar em ' + (gAtual ? gAtual.nome : c.nome) + '…', grupos:grupos });
+    if (!lista.length) html = html.replace('<div class="sv9-quadro"></div>', '<div class="pendente">Esta área ainda não tem conduta preenchida. Ligue o <a href="#ajustes"><b>modo autor</b></a> nas configurações para ver as ' + todas.length + ' pendentes.</div>');
     doc.innerHTML = html;
   }
+
+  /* ---------- GUIA CLÍNICO por níveis (celular): áreas → subáreas → condutas ---------- */
+  function gcCard(href, ico, nome, conta, emerg, cls) {
+    return '<a class="gc-card' + (cls ? ' ' + cls : '') + '" href="' + esc(href) + '" data-busca="' + esc(normaliza(nome)) + '">' +
+      '<span class="gc-i">' + ICO(ico || 'livro') + '</span><b>' + esc(nome) + '</b>' +
+      '<span class="gc-m"><i>' + esc(conta) + '</i>' + (emerg ? '<em>' + emerg + (emerg === 1 ? ' emergência' : ' emergências') + '</em>' : '') + '</span></a>';
+  }
+  function gcBarra(volta, titulo, total, ph, escopo) {
+    return '<header class="sv9-barra"><div class="sv9-b1">' +
+      '<a class="sv9-volta" href="' + esc(volta) + '" aria-label="Voltar">' + ICO('setaEsq') + '</a>' +
+      '<h1>' + esc(titulo) + '<span>' + total + '</span></h1>' +
+      '<label class="sv9-filtro">' + ICO('lupa') + '<input type="search" id="gcBusca" data-escopo="' + esc(escopo) + '" autocomplete="off" enterkeyhint="search" placeholder="' + esc(ph) + '" aria-label="Buscar conduta"></label>' +
+    '</div></header>';
+  }
+  function nEmerg(l) { return l.filter(function (p) { return p.gravidade === 'emergencia'; }).length; }
+  /* primeira tela: uma lista única, linhas finas, ícone com a cor da área */
+  var GC_TOM = ['#E5372B','#0038E5','#7C3AED','#F57C1F','#0E9F8E','#DB2777','#1F9D55','#B7791F','#0891B2','#4F46E5','#64748B','#C2410C','#0F766E','#9333EA','#2563EB','#BE123C'];
+  function renderAreas() {
+    var total = 0, k = 0;
+    var linhas = CATEGORIAS.map(function (c) {
+      var l = listaArea(c.id); if (!l.length && !modoAutor()) return '';
+      total += l.length;
+      var ne = nEmerg(l), tom = GC_TOM[k++ % GC_TOM.length];
+      return '<a class="gc-row" href="#' + esc(c.id) + '" data-busca="' + esc(normaliza(c.nome)) + '" style="--gc:' + tom + '">' +
+        '<span class="gc-ri">' + ICO(c.icone || 'livro') + '</span>' +
+        '<span class="gc-rt"><b>' + esc(c.nome) + '</b><i>' + l.length + (l.length === 1 ? ' conduta' : ' condutas') + '</i></span>' +
+        (ne ? '<span class="gc-re" title="' + ne + (ne === 1 ? ' emergência' : ' emergências') + '"><i></i>' + ne + '</span>' : '') +
+        ICO('setaDir') + '</a>';
+    }).join('');
+    doc.innerHTML = '<section class="tz sv9 pg-azul gc">' + gcBarra('#', 'Guia clínico', total, 'Buscar conduta em todas as áreas…', '*') +
+      '<div class="gc-t gc-t2" id="gcLeg"><span>Áreas</span><span class="gc-leg"><i></i>emergências</span></div>' +
+      '<nav class="gc-lista2" id="gcGrade" aria-label="Áreas do guia">' + linhas + '</nav>' +
+      '<div class="gc-res" id="gcRes" hidden></div></section>';
+  }
+  function renderSubareas(c, lista) {
+    var cards = subsDe(c.id).map(function (g) {
+      var l = listaSub(g); if (!l.length) return '';
+      return gcCard('#' + c.id + '/' + g.id, c.icone, g.nome, l.length + (l.length === 1 ? ' conduta' : ' condutas'), nEmerg(l));
+    }).join('');
+    doc.innerHTML = '<section class="tz sv9 pg-azul gc">' + gcBarra('#guia', c.nome, lista.length, 'Buscar em ' + c.nome + '…', c.id) +
+      '<p class="gc-t">Escolha o tema</p><div class="gc-grade" id="gcGrade">' + cards +
+        gcCard('#' + c.id + '/todas', 'menu', 'Todas as condutas de ' + c.nome, lista.length + ' condutas', 0, 'todas') + '</div>' +
+      '<div class="gc-res" id="gcRes" hidden></div></section>';
+  }
+  /* busca das telas de nível: condutas que batem, em lista única */
+  doc.addEventListener('input', function (e) {
+    if (e.target.id !== 'gcBusca') return;
+    var q = normaliza(e.target.value.trim()), esc0 = e.target.dataset.escopo;
+    var grade = document.getElementById('gcGrade'), res = document.getElementById('gcRes'), tt = doc.querySelector('.gc-t');
+    if (!q) { res.hidden = true; res.innerHTML = ''; grade.hidden = false; if (tt) tt.hidden = false; return; }
+    var base = esc0 === '*' ? CATEGORIAS.reduce(function (t, c) { return t.concat(listaArea(c.id)); }, []) : listaArea(esc0);
+    var achou = base.filter(function (p) { return normaliza(p.titulo + ' ' + cru(p.resumo || '')).indexOf(q) !== -1; });
+    res.innerHTML = '<p class="gc-n">' + (achou.length ? achou.length + (achou.length === 1 ? ' conduta' : ' condutas') : 'Nenhuma conduta com esse termo.') + '</p>' +
+      (achou.length ? '<div class="sv9-g gc-lista"><div class="sv9-g-l">' + achou.map(function (p) {
+        var cat = esc0 === '*' ? catDe(p) : null;
+        return '<a class="sv9-it g-' + (p.gravidade || 'rotina') + '" href="' + esc(hrefConduta(p)) + '"><i class="sv9-dot"></i><span><b>' + esc(p.titulo) + '</b>' +
+          '<em>' + esc(cat ? cat.nome : cru(p.resumo || '')) + '</em></span>' + ICO('setaDir') + '</a>';
+      }).join('') + '</div></div>' : '');
+    res.hidden = false; grade.hidden = true; if (tt) tt.hidden = true;
+  });
 
   function render() {
     var res = resultadosBusca();
     side.classList.toggle('buscando', !!res);
     /* na home a busca do topo some: a do painel é a que vale */
-    document.body.classList.toggle('na-home', (modo === 'home' || modo === 'favoritas' || modo === 'doses' || modo === 'droga' || modo === 'secao' || (modo === 'secao' && secAtual === 'presc' && !subSecao && !window.__rxCompleto) || modo === 'critico' || modo === 'urgencias' || modo === 'queixa' || modo === 'guia') || !!res);
+    document.body.classList.toggle('na-home', (modo === 'home' || modo === 'ajustes' || modo === 'areas' || modo === 'favoritas' || modo === 'doses' || modo === 'droga' || modo === 'secao' || (modo === 'secao' && secAtual === 'presc' && !subSecao && !window.__rxCompleto) || modo === 'critico' || modo === 'urgencias' || modo === 'queixa' || modo === 'guia') || !!res);
     renderSumario(res);
     renderDoc(res);
     renderAbasTopo(res);
     eyebrow(res);
+    ajustaBarra();
   }
+
+  /* ---------- celular: barra grudada só com a tira de atalhos ----------
+     A barra escura das listas é alta demais para ficar inteira na tela.
+     Com top negativo ela rola junto até sobrar só a tira de atalhos. */
+  function barraVisivel(b) {
+    if (!b || getComputedStyle(b).position !== 'sticky') return 0;
+    return Math.max(0, b.offsetHeight + (parseFloat(b.style.top) || 0));
+  }
+  function ajustaBarra() {
+    /* tira de seções das ferramentas: a ativa sempre à vista */
+    var on = celular() && doc.querySelector('.fr-filhas a.on, .dz2-rail a.on');
+    if (on) {
+      var n = on.parentElement, dx = on.getBoundingClientRect().left - n.getBoundingClientRect().left;
+      if (dx < 0 || dx + on.offsetWidth > n.clientWidth) n.scrollLeft += dx - 14;
+    }
+    var b = doc.querySelector('.sv9-barra');
+    if (!b) return;
+    b.style.top = '';
+    if (!celular() || getComputedStyle(b).position !== 'sticky') return;
+    var s = b.querySelector('.sv9-saltos');
+    b.style.top = (s ? -(s.offsetTop - 8) : -(b.offsetHeight + 24)) + 'px';
+  }
+  if (window.MutationObserver) new MutationObserver(function () { requestAnimationFrame(ajustaBarra); }).observe(doc, { childList:true });
+  window.addEventListener('resize', ajustaBarra);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(ajustaBarra);
 
   /* ---------- abas principais no topo ----------
      A mesma lista do sumário (acesso rápido + ferramentas + guia), em linha
@@ -2883,8 +3589,8 @@
   function renderAbasTopo(res) {
     if (!abasTopo) return;
     var itens = [];
-    itens.push({ href:'#' + (areaAtual || (CATEGORIAS[0] && CATEGORIAS[0].id) || ''), nome:'Guia clínico', ico:'livro',
-                 on: !res && (modo === 'guia' || !!condutaAtual) });
+    itens.push({ href:celular() ? '#guia' : '#' + (areaAtual || (CATEGORIAS[0] && CATEGORIAS[0].id) || ''), nome:'Guia clínico', ico:'livro',
+                 on: !res && (modo === 'guia' || modo === 'areas' || !!condutaAtual) });
     if (temQueixas()) {
       itens.push({ href:'#queixa', nome:'Queixas', ico:'porta', on: !res && modo === 'queixa' });
       itens.push({ href:'#critico', nome:'Sala vermelha', ico:'perigo', on: !res && modo === 'critico' });
@@ -2957,6 +3663,8 @@
     if (!h) { modo = 'home'; return; }
     if (LEGADO[h]) { location.replace('#' + LEGADO[h]); return; }
     if (partes[0] === 'favoritas') { modo = 'favoritas'; return; }
+    if (partes[0] === 'guia') { modo = 'areas'; return; }
+    if (partes[0] === 'ajustes' || partes[0] === 'configuracoes') { modo = 'ajustes'; return; }
     if (partes[0] === 'urgencias') { modo = 'urgencias'; return; }
     if (partes[0] === 'queixa') { modo = 'queixa'; queixaAtual = partes[1] || null; return; }
     if (partes[0] === 'doses') { modo = 'doses'; dosesGrupo = partes[1] || null; return; }
@@ -3045,9 +3753,14 @@
     if (e.key === 'Escape') { busca.value = ''; termoBusca = ''; render(); busca.blur(); }
   });
 
-  /* ---------- modo noturno ---------- */
+  /* ---------- tema: claro (padrão), escuro ou automático à noite ---------- */
   var btnTema = document.getElementById('btnTema');
-  /* claro é o padrão; escuro é escolha, não herança do sistema */
+  function temaEscolhido() {
+    var t = null;
+    try { t = localStorage.getItem('tema'); } catch (e) { /* modo privado */ }
+    return t === 'escuro' || t === 'auto' ? t : 'claro';
+  }
+  function ehNoite() { var hh = new Date().getHours(); return hh >= 19 || hh < 7; }
   function temaEfetivo() {
     return document.documentElement.dataset.tema === 'escuro' ? 'escuro' : 'claro';
   }
@@ -3056,17 +3769,28 @@
     btnTema.innerHTML = ICO(escuro ? 'sol' : 'lua');
     btnTema.title = escuro ? 'Voltar ao modo claro' : 'Modo noturno';
   }
-  btnTema.addEventListener('click', function () {
-    var novo = temaEfetivo() === 'escuro' ? 'claro' : 'escuro';
-    document.documentElement.dataset.tema = novo;
-    try { localStorage.setItem('tema', novo); } catch (e) { /* modo privado */ }
-    pintaBotaoTema();
-    /* a barra do navegador acompanha o tema escolhido */
+  function aplicaTema() {
+    var t = temaEscolhido();
+    var ef = (t === 'escuro' || (t === 'auto' && ehNoite())) ? 'escuro' : 'claro';
+    document.documentElement.dataset.tema = ef;
+    /* a barra do navegador acompanha o tema */
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', novo === 'escuro' ? '#0B1220' : '#F4F6FB');
-    if (window.UI && UI.anuncia) UI.anuncia(novo === 'escuro' ? 'Modo noturno ligado' : 'Modo claro');
+    if (m) m.setAttribute('content', ef === 'escuro' ? '#0B1220' : '#F4F6FB');
+    pintaBotaoTema();
+    return ef;
+  }
+  function defineTema(t) {
+    try { localStorage.setItem('tema', t); } catch (e) { /* modo privado */ }
+    var ef = aplicaTema();
+    if (window.UI && UI.anuncia) UI.anuncia(ef === 'escuro' ? 'Modo noturno ligado' : 'Modo claro');
+  }
+  /* o botão rápido escolhe o oposto do que está na tela */
+  btnTema.addEventListener('click', function () {
+    defineTema(temaEfetivo() === 'escuro' ? 'claro' : 'escuro');
+    if (modo === 'ajustes') renderAjustes();
   });
-  pintaBotaoTema();
+  aplicaTema();
+  setInterval(function () { if (temaEscolhido() === 'auto') aplicaTema(); }, 60000);
 
   /* ---------- sumario: a area abre e fecha no mesmo clique ---------- */
   toc.addEventListener('click', function (e) {

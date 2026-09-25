@@ -57,15 +57,21 @@ assert not dpag, 'demo com páginas aninhadas: não previsto'
 NOMES_DEMO = [  # cabeçalho do arquivo → nome (mesmos nomes do projeto plantao-guia)
     ('ICONES', 'icones.js'), ('BASE DE CONTEUDO', 'dados.js'), ('SUBPASTAS', 'subpastas.js'),
     ('QUEIXAS', 'queixas.js'), ('FERRAMENTAS DO PLANTAO — base', 'ferramentas-dados.js'),
-    ('ESCORES CLÍNICOS', 'scores-dados.js'), ('PEDIATRIA', 'pediatria.js'),
+    ('ESCORES CLÍNICOS', 'scores-dados.js'),
+    # a planilha também começa com "PEDIATRIA": tem que vir antes, senão os dois viram pediatria.js
+    ('PEDIATRIA — medicações da planilha', 'pediatria-planilha.js'), ('PEDIATRIA', 'pediatria.js'),
     ('BULÁRIO', 'bulario-dados.js'), ('FERRAMENTAS DO PLANTAO — motor', 'ferramentas.js'),
     ('ELETRÓLITOS', 'eletrolitos.js'), ('Render do documento', 'app.js'), ('CASCA DO APLICATIVO', 'ui.js'),
 ]
 fontes_demo = {}
+ja_gravados = set()
 for uid, (mime, b) in drec.items():
     if mime == 'text/javascript':
         cab = b[:200].decode('utf-8', 'replace')
         nome = next(n for k, n in NOMES_DEMO if k in cab)
+        if nome in ja_gravados:  # dois scripts com o mesmo nome = um sobrescreve o outro e a demo quebra
+            sys.exit(f'dois scripts da demo viraram {nome}: ajuste NOMES_DEMO ({cab[:100]!r})')
+        ja_gravados.add(nome)
         grava('demo/js/' + nome, b)
         dtpl = troca(dtpl, f'<script src="{uid}">', f'<script src="js/{nome}">')
     elif mime == 'font/woff2':

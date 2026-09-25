@@ -64,17 +64,26 @@
       (sub ? '<span>' + esc(sub) + '</span>' : '') + '</div>';
   }
   /* uma prescrição de bancada: título, linha copiável, tempo, nota */
+  /* prescrição visual: dose grande, receita em blocos, tempo em etiqueta.
+     grande: [valor, unidade] · sub: via/ritmo · partes: [[qtd, nome]] · total: [qtd, nome] */
   function rx(o) {
-    var txt = textoRx(o);
-    return '<div class="el-rx' + (o.cls ? ' ' + o.cls : '') + '" data-el-txt="' + esc(txt) + '">' +
-      '<div class="el-rx-cab"><b>' + esc(o.titulo) + '</b>' +
-        (o.tempo ? '<span class="el-rx-tempo">' + ICO('relogio') + esc(o.tempo) + '</span>' : '') +
-        '<span class="el-rx-acoes">' +
-          '<button type="button" class="ferr-btn peq forte" data-el-acao="copiar">Copiar</button>' +
-          '<button type="button" class="ferr-btn peq" data-el-acao="rascunho">Rascunho</button>' +
-        '</span></div>' +
-      '<code class="el-rx-linha">' + esc(o.linha) + '</code>' +
-      (o.nota ? '<p class="el-rx-nota">' + esc(o.nota) + '</p>' : '') +
+    return '<div class="el-rx el-rx2' + (o.cls ? ' ' + o.cls : '') + '">' +
+      '<b class="el-rx2-tit">' + esc(o.titulo) + '</b>' +
+      (o.grande ? '<div class="el-inf-vaz"><b>' + esc(o.grande[0]) + '</b><span>' + esc(o.grande[1]) + '</span></div>' : '') +
+      (o.sub ? '<div class="el-rx2-sub">' + esc(o.sub) + '</div>' : '') +
+      (o.partes ? '<div class="el-receita">' + receitaHtml({ partes:o.partes.map(function (p) { return [p[1], p[0]]; }), total:o.total }) + '</div>' : '') +
+      (!o.grande && !o.partes ? '<p class="el-rx2-linha">' + esc(o.linha) + '</p>' : '') +
+      (o.tempo ? '<div class="el-rx2-meta"><span>' + ICO('relogio') + esc(o.tempo) + '</span></div>' : '') +
+      (o.nota ? '<p class="el-rx2-nota">' + esc(o.nota) + '</p>' : '') +
+    '</div>';
+  }
+  /* resultado de conta: número grande, destaque curto, fórmula num toque */
+  function calcCard(cab, big, un, destaque, formula) {
+    return '<div class="el-calc el-calc2">' +
+      '<h4 class="el-inf-tit">' + esc(cab) + '</h4>' +
+      '<div class="el-inf-vaz"><b>' + esc(big) + '</b><span>' + esc(un) + '</span></div>' +
+      (destaque ? '<p class="el-calc2-dest">' + destaque + '</p>' : '') +
+      (formula ? '<details class="el-inf-mais"><summary>' + ICO('setaDir') + 'Como foi calculado</summary><p>' + formula + '</p></details>' : '') +
     '</div>';
   }
   function textoRx(o) {
@@ -125,17 +134,21 @@
         'Afastar pseudo-hipercalemia (hemólise, garrote, leucocitose/trombocitose): repetir sem garrote se o ECG for normal.'
       ], 'atencao');
       html += passo(1, 'Estabilizar a membrana' + (emerg ? '' : ' — só se o ECG estiver alterado'),
-        rx({ titulo:'Gluconato de cálcio 10%', linha:'1 ampola (10 mL) + SG 5% 100 mL — EV', tempo:'em 5 minutos',
+        rx({ titulo:'Gluconato de cálcio 10%', linha:'1 ampola (10 mL) + SG 5% 100 mL — EV', tempo:'EV em 5 minutos',
+             partes:[['10 mL', 'Gluconato Ca 10%'], ['100 mL', 'SG 5%']],
              nota:'Efeito em minutos, dura 30–60 min. Se a alteração do ECG persistir, repetir após 5 min. Não baixa o potássio. Em parada cardíaca: 30 mL (3 g) em bolus, sem diluir, + bicarbonato 8,4% 1 mEq/kg em outra via.' }));
       html += passo(2, 'Deslocar para dentro da célula',
-        rx({ titulo:'Solução polarizante', linha:'Insulina regular 10 UI + glicose 50% 100 mL — EV', tempo:'em 30–60 minutos',
+        rx({ titulo:'Solução polarizante', linha:'Insulina regular 10 UI + glicose 50% 100 mL — EV', tempo:'EV em 30–60 minutos',
+             partes:[['10 UI', 'Insulina regular'], ['100 mL', 'Glicose 50%']],
              nota:'Efeito em 15–30 min, dura ~4 h; pode repetir de 2/2 a 4/4 h. Glicemia capilar de 1/1 h por 6 h. Se glicemia > 250: insulina isolada, sem glicose.' }) +
-        rx({ titulo:'Salbutamol (nebulização)', linha:'Salbutamol 5 mg/mL — 2 a 4 mL + SF 0,9% 5 mL — inalatório', tempo:'pico em 90 minutos',
+        rx({ titulo:'Salbutamol (nebulização)', linha:'Salbutamol 5 mg/mL — 2 a 4 mL + SF 0,9% 5 mL — inalatório', tempo:'inalatório · pico em 90 min',
+             partes:[['2–4 mL', 'Salbutamol 5 mg/mL'], ['5 mL', 'SF 0,9%']],
              nota:'Efeito aditivo ao da polarizante. Taquicardia é esperada.' }));
       html += passo(3, 'Remover do corpo',
-        rx({ titulo:'Furosemida', linha:'40 a 60 mg (2 a 3 ampolas) — EV', tempo:'se houver diurese',
+        rx({ titulo:'Furosemida', linha:'40 a 60 mg (2 a 3 ampolas) — EV', tempo:'se houver diurese', grande:['40–60', 'mg'], sub:'2 a 3 ampolas EV',
              nota:'Hipovolêmico: volume com SF antes. Euvolêmico: repor SF para balanço zero.' }) +
-        rx({ titulo:'Resina de troca (poliestirenossulfonato de cálcio)', linha:'30 g em 100 mL de manitol 10% ou água — VO', tempo:'até de 4/4 h',
+        rx({ titulo:'Resina de troca (poliestirenossulfonato de cálcio)', linha:'30 g em 100 mL de manitol 10% ou água — VO', tempo:'VO · até de 4/4 h',
+             partes:[['30 g', 'Resina'], ['100 mL', 'Manitol 10% ou água']],
              nota:'Lento e pouco eficaz — não conte com ele na urgência.' }) +
         '<p class="el-nota">Hemodiálise é o tratamento definitivo na hipercalemia refratária, na anúria e na urgência dialítica. Bicarbonato só se houver acidose metabólica associada ou parada cardíaca.</p>');
       html += lista('Depois', ['Repetir potássio e ECG após cada ciclo (1–2 h).', 'Procurar a causa: LRA, DRC agudizada, rabdomiólise, acidose, hemólise, sangramento digestivo.']);
@@ -170,24 +183,32 @@
       if (!central) {
         html += '<p class="el-nota">Periférico: até 40–60 mEq/L e no máximo 10 mEq/h — acima disso dói, flebita e exige central.</p>';
         html += rx({ titulo:'Opção A — KCl 19,1%', linha:'KCl 19,1% 2 ampolas (20 mL = 50 mEq) + SF 0,9% 1000 mL — EV em BIC 200 mL/h', tempo:'10 mEq/h — cerca de 5 horas',
+                     grande:['200', 'mL/h'], sub:'EV em BIC', partes:[['20 mL', 'KCl 19,1% · 50 mEq'], ['1000 mL', 'SF 0,9%']],
                      nota:'Repetir a bolsa conforme o potássio de controle. Não diluir em soro glicosado.' });
         html += rx({ titulo:'Opção B — KCl 10%', linha:'KCl 10% 4 ampolas (40 mL = 54 mEq) + SF 0,9% 960 mL — EV em BIC 185 mL/h', tempo:'10 mEq/h — cerca de 5 h 30',
+                     grande:['185', 'mL/h'], sub:'EV em BIC', partes:[['40 mL', 'KCl 10% · 54 mEq'], ['960 mL', 'SF 0,9%']],
                      nota:'Mesma regra: 1 g de KCl = 13,4 mEq.' });
       } else {
         html += '<p class="el-nota">Central: até 20 mEq/h, com monitor cardíaco contínuo e potássio a cada 2–4 h.</p>';
         html += rx({ titulo:'Opção A — KCl 19,1%', linha:'KCl 19,1% 1 ampola (10 mL = 25 mEq) + SF 0,9% 100 mL — EV em BIC 90 mL/h', tempo:'20 mEq/h — cerca de 1 h 15',
+                     grande:['90', 'mL/h'], sub:'EV em BIC · veia central', partes:[['10 mL', 'KCl 19,1% · 25 mEq'], ['100 mL', 'SF 0,9%']],
                      nota:'Repetir conforme o potássio de controle. Somente em veia central.' });
-        html += rx({ titulo:'Opção B — KCl 10%', linha:'KCl 10% 2 ampolas (20 mL = 27 mEq) + SF 0,9% 100 mL — EV em BIC 90 mL/h', tempo:'20 mEq/h — cerca de 1 h 20' });
+        html += rx({ titulo:'Opção B — KCl 10%', linha:'KCl 10% 2 ampolas (20 mL = 27 mEq) + SF 0,9% 100 mL — EV em BIC 90 mL/h', tempo:'20 mEq/h — cerca de 1 h 20',
+                     grande:['90', 'mL/h'], sub:'EV em BIC · veia central', partes:[['20 mL', 'KCl 10% · 27 mEq'], ['100 mL', 'SF 0,9%']] });
       }
-      html += rx({ titulo:'Magnésio — sempre que estiver baixo ou a hipocalemia for refratária', linha:'Sulfato de magnésio 10% 2 ampolas (20 mL = 2 g) + SG 5% 100 mL — EV', tempo:'em 10–20 minutos',
+      html += rx({ titulo:'Magnésio — sempre que estiver baixo ou a hipocalemia for refratária', linha:'Sulfato de magnésio 10% 2 ampolas (20 mL = 2 g) + SG 5% 100 mL — EV', tempo:'EV em 10–20 minutos',
+                   partes:[['20 mL', 'MgSO₄ 10% · 2 g'], ['100 mL', 'SG 5%']],
                    nota:'Sem corrigir o magnésio, o potássio não sobe.' });
       html += rx({ titulo:'Associar a via oral', linha:'Xarope de KCl 6% 20 mL VO de 6/6 h (ou KCl 600 mg 2 comprimidos de 6/6 h)', tempo:'junto com a EV',
+                   grande:['20', 'mL'], sub:'Xarope de KCl 6% VO de 6/6 h — ou 2 cp de KCl 600 mg',
                    nota:'Acelera a correção e encurta a infusão. Cada 20 mL de xarope 6% ≈ 16 mEq; cada comprimido de 600 mg = 8 mEq.' });
       html += lista('Não fazer', ['Diluir em soro glicosado — a glicose libera insulina e joga potássio para dentro da célula.', 'KCl em bolus ou em veia periférica acima de 10 mEq/h.', 'Esquecer o ECG em K < 3,0, sintomático ou em uso de digoxina.'], 'grave');
     } else {
       html += rx({ titulo:'Xarope de KCl 6%', linha:'20 mL VO de 6/6 h a 8/8 h (≈ 16 mEq por dose)', tempo:'40 a 100 mEq por dia',
+                   grande:['20', 'mL'], sub:'VO de 6/6 h a 8/8 h · ≈ 16 mEq por dose',
                    nota:'Sabor ruim: diluir em suco melhora a adesão.' });
       html += rx({ titulo:'Ou KCl comprimido 600 mg', linha:'2 comprimidos VO de 6/6 h a 8/8 h (8 mEq por comprimido)', tempo:'após as refeições',
+                   grande:['2', 'cp'], sub:'VO de 6/6 h a 8/8 h · 8 mEq por comprimido',
                    nota:'Alternativa ao xarope.' });
       html += lista('Junto', ['Dosar magnésio e repor se baixo.', 'Corrigir a causa: diurético, perda digestiva, alcalose, beta-2 agonista.', 'Repetir o potássio em 24 h.']);
     }
@@ -198,15 +219,60 @@
   /* =========================================================
      2. SÓDIO — Adrogué-Madias
      ========================================================= */
+  /* partes: o que vai no frasco, para desenhar a receita; dica: o cuidado de uma linha */
   var SOL_HIPO = [
-    { id:'nacl3', nome:'NaCl 3%', na:513, preparo:'NaCl 20% 55 mL + SF 0,9% 445 mL = 500 mL de NaCl 3% (pode ir em veia periférica)' },
-    { id:'sf',    nome:'SF 0,9%', na:154, preparo:'Soro fisiológico 0,9% puro — só sobe o sódio se o paciente estiver hipovolêmico' }
+    { id:'nacl3', nome:'NaCl 3%', na:513, preparo:'NaCl 20% 55 mL + SF 0,9% 445 mL = 500 mL de NaCl 3% (pode ir em veia periférica)',
+      partes:[['NaCl 20%', '55 mL'], ['SF 0,9%', '445 mL']], total:'500 mL de NaCl 3%', dica:'Pode ir em veia periférica' },
+    { id:'sf',    nome:'SF 0,9%', na:154, preparo:'Soro fisiológico 0,9% puro — só sobe o sódio se o paciente estiver hipovolêmico',
+      partes:[['SF 0,9%', 'puro']], dica:'Só sobe o sódio se o paciente estiver hipovolêmico' }
   ];
   var SOL_HIPER = [
-    { id:'sf045', nome:'SF 0,45%', na:77, preparo:'SF 0,9% 500 mL + SG 5% (ou água destilada) 500 mL = 1000 mL com 77 mEq/L' },
-    { id:'sg5',   nome:'SG 5%',    na:0,  preparo:'Soro glicosado 5% puro — vigiar glicemia e hiperglicemia osmótica' },
-    { id:'agua',  nome:'Água livre VO/SNE', na:0, preparo:'Água por boca ou sonda — a via mais segura quando o paciente tolera' }
+    { id:'sf045', nome:'SF 0,45%', na:77, preparo:'SF 0,9% 500 mL + SG 5% (ou água destilada) 500 mL = 1000 mL com 77 mEq/L',
+      partes:[['SF 0,9%', '500 mL'], ['SG 5% ou AD', '500 mL']], total:'1000 mL de SF 0,45%' },
+    { id:'sg5',   nome:'SG 5%',    na:0,  preparo:'Soro glicosado 5% puro — vigiar glicemia e hiperglicemia osmótica',
+      partes:[['SG 5%', 'puro']], dica:'Vigiar glicemia e hiperglicemia osmótica' },
+    { id:'agua',  nome:'Água livre VO/SNE', na:0, preparo:'Água por boca ou sonda — a via mais segura quando o paciente tolera',
+      partes:[['Água', 'VO ou SNE']], dica:'A via mais segura quando o paciente tolera' }
   ];
+  function receitaHtml(sol) {
+    return sol.partes.map(function (p) {
+      return '<span class="el-ing"><b>' + esc(p[1]) + '</b><i>' + esc(p[0]) + '</i></span>';
+    }).join('<span class="el-mais">+</span>') +
+      (sol.total ? '<span class="el-mais">=</span><span class="el-ing tot"><b>' + esc(Array.isArray(sol.total) ? sol.total[0] : sol.total.split(' de ')[0]) + '</b><i>' +
+        esc(Array.isArray(sol.total) ? sol.total[1] : (sol.total.split(' de ')[1] || '')) + '</i></span>' : '');
+  }
+  /* bolus da hiponatremia sintomática: quanto, em quanto tempo e como montar */
+  function bolus(sol) {
+    return '<div class="el-inf grave">' +
+      '<h4 class="el-inf-tit">Bolus agora</h4>' +
+      '<div class="el-inf-vaz"><b>100–150</b><span>mL</span></div>' +
+      '<div class="el-inf-sub">NaCl 3% EV em 20 min · repetir até 3×</div>' +
+      '<div class="el-inf-prep"><h4>Como montar o NaCl 3%</h4><div class="el-receita">' + receitaHtml(sol) + '</div>' +
+        '<ol class="el-passos">' +
+          '<li>Pegue uma bolsa de <b>SF 0,9% 500 mL</b> e despreze <b>55 mL</b>.</li>' +
+          '<li>Injete na bolsa <b>55 mL de NaCl 20%</b> (5½ ampolas de 10 mL).</li>' +
+          '<li>Homogeneíze, rotule "NaCl 3%" e infunda <b>100–150 mL</b> em 20 min.</li>' +
+        '</ol>' +
+        '<p>' + esc(sol.dica) + '.</p></div>' +
+      '<p class="el-inf-alvo">Objetivo: subir 4–6 mEq/L e reverter o sintoma — não normalizar o sódio.</p>' +
+    '</div>';
+  }
+  /* sódio: vazão, receita do frasco e cópia num cartão só */
+  function infusao(o) {
+    var sol = o.sol;
+    var receita = receitaHtml(sol);
+    return '<div class="el-inf" data-el-txt="' + esc(o.txt) + '">' +
+      '<div class="el-inf-vaz"><b>' + esc(o.vazao) + '</b><span>mL/h</span></div>' +
+      '<div class="el-inf-sub">' + esc(sol.nome) + ' em BIC · 24 h · ' + esc(o.litros) + ' L</div>' +
+      '<div class="el-inf-na"><span>' + esc(o.de) + '</span>' + ICO('setaDir') + '<span>' + esc(o.para) + '</span><i>mEq/L em 24 h</i></div>' +
+      '<div class="el-inf-prep"><h4>Preparo</h4><div class="el-receita">' + receita + '</div>' +
+        (sol.dica ? '<p>' + esc(sol.dica) + '</p>' : '') + '</div>' +
+      '<details class="el-inf-mais"><summary>' + ICO('setaDir') + 'Como foi calculado</summary>' +
+        '<p>Cada litro de ' + esc(sol.nome) + ' altera o sódio em ' + esc(o.porLitro) + ' mEq/L · água corporal ' + esc(o.act) + '.</p>' +
+        '<p>A fórmula ignora as perdas urinárias: o sódio real pode subir mais rápido. Dosar a cada 2–4 h e recalcular.</p>' +
+      '</details>' +
+    '</div>';
+  }
   function fatorACT(sexo, idoso) {
     if (sexo === 'm') return idoso ? 0.45 : 0.5;
     return idoso ? 0.5 : 0.6;
@@ -239,8 +305,7 @@
         sint ? 'Sintoma grave: bolus de NaCl 3% até reverter o sintoma — depois o cálculo abaixo para o restante das 24 h.'
              : 'Sem sintoma grave, o limite é 8–10 mEq/L em 24 h. Sódio a cada 2–4 h durante a correção.');
       if (sint) {
-        html += rx({ titulo:'Bolus — sintoma neurológico grave', linha:'NaCl 3% 100 a 150 mL — EV', tempo:'em 20 minutos, repetir até 3 vezes',
-                     nota:'Objetivo: subir 4–6 mEq/L e reverter o sintoma, não normalizar o sódio. Preparo: NaCl 20% 55 mL + SF 0,9% 445 mL.', cls:'grave' });
+        html += bolus(SOL_HIPO[0]);
       }
     } else {
       html += status(na > 160 ? 'grave' : 'atencao',
@@ -258,10 +323,10 @@
 
     var act = peso * fatorACT(s.sexo, s.idade === 'i');
     var sols = hipo ? SOL_HIPO : SOL_HIPER;
-    html += opcoes(id, 'sol', 'Solução disponível', sols.map(function (x) { return [x.id, x.nome + ' (Na ' + x.na + ')']; }));
+    html += opcoes(id, 'sol', 'Qual solução você tem?', sols.map(function (x) { return [x.id, x.nome]; }));
     var sol = null;
     sols.forEach(function (x) { if (x.id === s.sol) sol = x; });
-    if (!sol) return html + vazio('Escolha a solução para ver a vazão.');
+    if (!sol) return html;
 
     var porLitro = (sol.na - na) / (act + 1);
     if ((hipo && porLitro <= 0) || (hiper && porLitro >= 0)) {
@@ -269,14 +334,10 @@
     }
     var litros = Math.abs(delta) / Math.abs(porLitro);
     var mlh = litros * 1000 / 24;
-    html += '<div class="el-calc">' +
-      '<div class="el-calc-cab">Prescrição sugerida — Adrogué-Madias</div>' +
-      '<div class="el-calc-big">' + f(mlh, 0) + ' <small>mL/h</small></div>' +
-      '<div class="el-calc-txt">' + esc(sol.nome) + ' em bomba de infusão por 24 h (' + f(litros, 2) + ' L) — leva o sódio de ' + f(na, 0) + ' para ' + f(alvo, 0) + ' mEq/L.</div>' +
-      '<div class="el-calc-txt">Cada litro de ' + esc(sol.nome) + ' altera o sódio em <b>' + (porLitro > 0 ? '+' : '') + f(porLitro, 2) + ' mEq/L</b> · água corporal ' + f(act, 1) + ' L (' + f(fatorACT(s.sexo, s.idade === 'i') * 100, 0) + '% de ' + f(peso, 0) + ' kg).</div>' +
-      '</div>';
-    html += rx({ titulo:'Prescrever', linha:sol.preparo + ' — EV em BIC ' + f(mlh, 0) + ' mL/h', tempo:'por 24 h, com sódio a cada 2–4 h',
-                 nota:'A fórmula ignora as perdas urinárias: o sódio real pode subir mais rápido do que o calculado. Recalcular a cada dosagem.' });
+    html += infusao({ sol:sol, vazao:f(mlh, 0), litros:f(litros, 2), de:f(na, 0), para:f(alvo, 0),
+      porLitro:(porLitro > 0 ? '+' : '') + f(porLitro, 2),
+      act:f(act, 1) + ' L (' + f(fatorACT(s.sexo, s.idade === 'i') * 100, 0) + '% de ' + f(peso, 0) + ' kg)',
+      txt:'Prescrever\n' + sol.preparo + ' — EV em BIC ' + f(mlh, 0) + ' mL/h — por 24 h, com sódio a cada 2–4 h' });
     html += alerta(hipo ? 'Mielinólise pontina' : 'Edema cerebral',
       hipo ? 'Não exceder 8–10 mEq/L nas primeiras 24 h (6 mEq/L se alto risco: alcoolismo, desnutrição, hipocalemia, Na < 105). Se passou do limite, reinfundir água (SG 5%) e considerar desmopressina.'
            : 'Baixar mais de 10 mEq/L em 24 h na hipernatremia crônica causa edema cerebral. Preferir água por via oral ou sonda quando possível.');
@@ -307,14 +368,11 @@
     var deficit = fator * peso * (alvo - atual);
     var metade = deficit / 2;
     var ml = Math.round(metade);
-    html += '<div class="el-calc">' +
-      '<div class="el-calc-cab">Déficit de bicarbonato</div>' +
-      '<div class="el-calc-big">' + f(deficit, 0) + ' <small>mEq</small></div>' +
-      '<div class="el-calc-txt">' + f(fator, 1) + ' × ' + f(peso, 0) + ' kg × (' + f(alvo, 0) + ' − ' + f(atual, 0) + '). ' +
-        (fator === 0.5 ? 'Na acidose grave (HCO₃⁻ < 10) o volume de distribuição sobe para 0,5.' : 'Volume de distribuição de 0,3 L/kg.') +
-        ' Repor <b>metade</b> (' + f(metade, 0) + ' mEq) e repetir a gasometria.</div>' +
-      '</div>';
-    html += rx({ titulo:'Bicarbonato de sódio 8,4% (1 mEq/mL)', linha:'Bicarbonato 8,4% ' + ml + ' mL + SG 5% (ou água destilada) ' + ml + ' mL — EV em BIC ' + Math.round(ml) + ' mL/h', tempo:'em 2 horas (' + (ml * 2) + ' mL no total)',
+    html += calcCard('Déficit de bicarbonato', f(deficit, 0), 'mEq', 'Repor <b>metade agora: ' + f(metade, 0) + ' mEq</b> e repetir a gasometria.',
+      f(fator, 1) + ' × ' + f(peso, 0) + ' kg × (' + f(alvo, 0) + ' − ' + f(atual, 0) + '). ' +
+        (fator === 0.5 ? 'Na acidose grave (HCO₃⁻ < 10) o volume de distribuição sobe para 0,5.' : 'Volume de distribuição de 0,3 L/kg.'));
+    html += rx({ titulo:'Bicarbonato de sódio 8,4% (1 mEq/mL)', linha:'Bicarbonato 8,4% ' + ml + ' mL + SG 5% (ou água destilada) ' + ml + ' mL — EV em BIC ' + Math.round(ml) + ' mL/h', tempo:'em 2 horas',
+                 grande:[String(Math.round(ml)), 'mL/h'], sub:'EV em BIC', partes:[[ml + ' mL', 'Bicarb. 8,4%'], [ml + ' mL', 'SG 5% ou AD']], total:[(ml * 2) + ' mL', 'total'],
                  nota:'Gasometria 30–60 min após o término. Nunca na mesma via que cálcio (precipita) nem catecolaminas.' });
     html += lista('Vigiar', ['Sódio e volume: cada 100 mL de 8,4% traz 100 mEq de sódio.', 'Potássio cai ao corrigir a acidose — repor antes se estiver baixo.', 'Cálcio iônico cai (tetania).', 'CO₂ gerado precisa ser ventilado: em hipoventilação, o bicarbonato piora a acidose.'], 'atencao');
     html += linkConduta('#nefro/acido-base', 'Ver a leitura da gasometria');
@@ -337,10 +395,11 @@
     if (!s.amp || !s.tdp) return html + vazio('Escolha a ampola e responda a pergunta.');
     var c50 = s.amp === '50';
     function volume(g) { return c50 ? (g * 2) + ' mL (50%)' : (g * 10) + ' mL (10%)'; }
+    function parteMg(g) { return [(c50 ? g * 2 : g * 10) + ' mL', 'MgSO₄ ' + (c50 ? '50%' : '10%') + ' · ' + g + ' g']; }
 
     if (s.tdp === 's') {
       html += status('grave', 'Torsades de pointes / PCR', 'Magnésio em bolus, independentemente do nível sérico.');
-      html += rx({ titulo:'Dose de ataque — 2 g', linha:'Sulfato de magnésio ' + volume(2) + ' + SG 5% 100 mL — EV', tempo:'em 2 a 15 minutos (na PCR, 1–2 min em bolus)',
+      html += rx({ titulo:'Dose de ataque — 2 g', linha:'Sulfato de magnésio ' + volume(2) + ' + SG 5% 100 mL — EV', tempo:'EV em 2–15 min · na PCR, bolus em 1–2 min', partes:[parteMg(2), ['100 mL', 'SG 5%']],
                    nota:'Repetir se a arritmia persistir. Depois, manter 1–2 g/h por 4–6 h.', cls:'grave' });
       html += linkConduta('#cardio/taqui-qrs-largo', 'Ver a conduta de taquicardia de QRS largo');
       return html;
@@ -349,14 +408,16 @@
     if (!s.grave) return html + vazio('Responda a segunda pergunta.');
     if (s.grave === 's') {
       html += status('grave', 'Hipomagnesemia sintomática', 'Ataque endovenoso e depois reposição lenta.');
-      html += rx({ titulo:'Dose de ataque — 2 g', linha:'Sulfato de magnésio ' + volume(2) + ' + SG 5% 100 mL — EV', tempo:'em 10 a 20 minutos',
+      html += rx({ titulo:'Dose de ataque — 2 g', linha:'Sulfato de magnésio ' + volume(2) + ' + SG 5% 100 mL — EV', tempo:'EV em 10–20 minutos', partes:[parteMg(2), ['100 mL', 'SG 5%']],
                    nota:'Pode repetir após 1 h se persistir.' });
-      html += rx({ titulo:'Manutenção — 4 g', linha:'Sulfato de magnésio ' + volume(4) + ' + SG 5% (ou SF 0,9%) ' + (c50 ? 492 : 460) + ' mL — EV em BIC', tempo:'em 12 a 24 horas' });
+      html += rx({ titulo:'Manutenção — 4 g', linha:'Sulfato de magnésio ' + volume(4) + ' + SG 5% (ou SF 0,9%) ' + (c50 ? 492 : 460) + ' mL — EV em BIC', tempo:'em 12 a 24 horas',
+                   grande:['21–42', 'mL/h'], sub:'EV em BIC', partes:[parteMg(4), [(c50 ? 492 : 460) + ' mL', 'SG 5% ou SF']], total:['500 mL', 'total'] });
     } else {
       html += status(mg !== null && mg < 1.2 ? 'atencao' : 'info',
         mg !== null ? (mg < 1.2 ? 'Hipomagnesemia grave (< 1,2), assintomática' : (mg < 1.8 ? 'Hipomagnesemia leve (1,2–1,7)' : 'Magnésio dentro da faixa (1,8–2,6)')) : 'Reposição lenta',
         'Sem sintoma, a reposição é lenta: metade do que se infunde rápido vai embora na urina.');
       html += rx({ titulo:'Reposição lenta — 4 g', linha:'Sulfato de magnésio ' + volume(4) + ' + SG 5% (ou SF 0,9%) ' + (c50 ? 492 : 460) + ' mL — EV em BIC', tempo:'em 12 a 24 horas',
+                   grande:['21–42', 'mL/h'], sub:'EV em BIC', partes:[parteMg(4), [(c50 ? 492 : 460) + ' mL', 'SG 5% ou SF']], total:['500 mL', 'total'],
                    nota:'Repetir por 2–3 dias se a causa persistir (diurético, diarreia, álcool, IBP).' });
     }
     html += lista('Cuidados', ['Insuficiência renal: metade da dose e nível a cada 6–12 h.', 'Vigiar reflexos patelares, PA e frequência respiratória — arreflexia é sinal de excesso.', 'Corrigir junto potássio e cálcio: os três costumam cair juntos.'], 'atencao');
@@ -375,12 +436,8 @@
     var exc = Math.max(0, gli - 100);
     var c16 = na + 1.6 * exc / 100;
     var c24 = na + 2.4 * exc / 100;
-    html += '<div class="el-calc">' +
-      '<div class="el-calc-cab">Sódio corrigido</div>' +
-      '<div class="el-calc-big">' + f(c16, 1) + ' <small>mEq/L</small></div>' +
-      '<div class="el-calc-txt">+1,6 mEq/L para cada 100 mg/dL de glicose acima de 100. ' +
-        (gli > 400 ? 'Acima de 400 mg/dL alguns serviços usam +2,4: <b>' + f(c24, 1) + ' mEq/L</b>.' : '') + '</div>' +
-      '</div>';
+    html += calcCard('Sódio corrigido', f(c16, 1), 'mEq/L', gli > 400 ? 'Com fator 2,4 (glicemia > 400): <b>' + f(c24, 1) + ' mEq/L</b>' : '',
+      '+1,6 mEq/L para cada 100 mg/dL de glicose acima de 100.');
     if (na < 135 && c16 >= 135) html += status('ok', 'Hiponatremia translocacional', 'O sódio corrigido é normal: a hiponatremia é só diluição pela glicose. Corrigir a glicemia resolve; não repor sódio.');
     else if (c16 < 135) html += status('atencao', 'Hiponatremia verdadeira', 'Mesmo corrigido o sódio está baixo. Avaliar volemia e seguir a conduta de hiponatremia — a correção da glicemia vai elevar o sódio medido.');
     else if (c16 > 145) html += status('atencao', 'Hipernatremia mascarada', 'O sódio corrigido está alto: ao corrigir a glicemia o sódio medido vai subir. Repor água livre junto com o tratamento da hiperglicemia.');
@@ -404,21 +461,30 @@
       html += campoNum(id, 'peso', 'Peso (kg) — para a manutenção', 'ex.: 70');
       var peso = num(s.peso);
       html += status('grave', 'Hipocalcemia grave', 'Cálcio endovenoso com monitor. Repetir até o sintoma cessar, depois manutenção em bomba.');
-      html += rx({ titulo:'1 · Dose de ataque', linha:'Gluconato de cálcio 10% 1 a 2 ampolas (10–20 mL) + SG 5% 100 mL — EV', tempo:'em 10 a 20 minutos, com monitor',
+      html += rx({ titulo:'1 · Dose de ataque', linha:'Gluconato de cálcio 10% 1 a 2 ampolas (10–20 mL) + SG 5% 100 mL — EV', tempo:'EV em 10–20 min, com monitor',
+                   partes:[['10–20 mL', 'Gluconato Ca 10%'], ['100 mL', 'SG 5%']],
                    nota:'Repetir após 10–60 min se o sintoma persistir. Cada ampola = 93 mg de cálcio elementar.', cls:'grave' });
       var faixa = peso ? 'BIC ' + f(peso * 0.5 / 0.93, 0) + ' a ' + f(peso * 1.5 / 0.93, 0) + ' mL/h (0,5–1,5 mg/kg/h de cálcio elementar)' : 'BIC 0,5–1,5 mg/kg/h de cálcio elementar (informe o peso para a vazão)';
       html += rx({ titulo:'2 · Manutenção', linha:'Gluconato de cálcio 10% 10 ampolas (100 mL) + SG 5% 900 mL — EV em ' + faixa, tempo:'por 24 h, cálcio a cada 4–6 h',
+                   grande: peso ? [f(peso * 0.5 / 0.93, 0) + '–' + f(peso * 1.5 / 0.93, 0), 'mL/h'] : null,
+                   sub: peso ? 'EV em BIC · 0,5–1,5 mg/kg/h de cálcio elementar' : 'EV em BIC · informe o peso para ver a vazão',
+                   partes:[['100 mL', 'Gluconato Ca 10%'], ['900 mL', 'SG 5%']], total:['1000 mL', 'total'],
                    nota:'Solução ≈ 0,93 mg de cálcio elementar por mL. Não misturar com bicarbonato ou fosfato na mesma via (precipita).' });
-      html += rx({ titulo:'Se magnésio baixo', linha:'Sulfato de magnésio 50% 4 mL (2 g) + SF 0,9% 100 mL — EV', tempo:'em 15–20 minutos',
+      html += rx({ titulo:'Se magnésio baixo', linha:'Sulfato de magnésio 50% 4 mL (2 g) + SF 0,9% 100 mL — EV', tempo:'EV em 15–20 minutos',
+                   partes:[['4 mL', 'MgSO₄ 50% · 2 g'], ['100 mL', 'SF 0,9%']],
                    nota:'Sem corrigir o magnésio o cálcio não sobe.' });
       html += lista('Junto', ['Iniciar a via oral (carbonato de cálcio + calcitriol) para poder desmamar a bomba.', 'Cuidado em uso de digoxina: infundir mais devagar.', 'Dosar magnésio, fósforo, PTH e vitamina D antes do tratamento, se possível.'], 'atencao');
     } else {
       html += status('atencao', 'Hipocalcemia leve ou assintomática', 'Parestesia perioral ou de extremidades, Chvostek/Trousseau leves. Reposição oral.');
-      html += rx({ titulo:'Carbonato de cálcio 500 mg (200 mg de cálcio elementar)', linha:'1 a 2 comprimidos VO de 8/8 h, junto às refeições', tempo:'1 a 3 g de cálcio elementar por dia' });
+      html += rx({ titulo:'Carbonato de cálcio 500 mg (200 mg de cálcio elementar)', linha:'1 a 2 comprimidos VO de 8/8 h, junto às refeições', tempo:'1 a 3 g de cálcio elementar por dia',
+                   grande:['1–2', 'cp'], sub:'VO de 8/8 h, junto às refeições' });
       html += rx({ titulo:'Calcitriol 0,25 mcg', linha:'1 cápsula VO 1 a 2 vezes ao dia', tempo:'hipoparatireoidismo e doença renal',
+                   grande:['1', 'cápsula'], sub:'VO 1 a 2 vezes ao dia',
                    nota:'Necessário quando o PTH está baixo ou o rim não ativa a vitamina D.' });
-      html += rx({ titulo:'Se deficiência de vitamina D', linha:'Colecalciferol 50.000 UI VO 1x/semana por 6 a 12 semanas; depois 1.000 a 2.000 UI/dia', tempo:'ataque e manutenção' });
-      html += rx({ titulo:'Se ficar sintomático ou falhar a via oral', linha:'Gluconato de cálcio 10% 1 a 2 ampolas + SG 5% 100 mL — EV em 10–20 min', tempo:'e passar para o esquema grave' });
+      html += rx({ titulo:'Se deficiência de vitamina D', linha:'Colecalciferol 50.000 UI VO 1x/semana por 6 a 12 semanas; depois 1.000 a 2.000 UI/dia', tempo:'ataque e manutenção',
+                   grande:['50.000', 'UI'], sub:'Colecalciferol VO 1×/semana por 6–12 semanas · depois 1.000–2.000 UI/dia' });
+      html += rx({ titulo:'Se ficar sintomático ou falhar a via oral', linha:'Gluconato de cálcio 10% 1 a 2 ampolas + SG 5% 100 mL — EV em 10–20 min', tempo:'EV em 10–20 min · e passar para o esquema grave',
+                   partes:[['10–20 mL', 'Gluconato Ca 10%'], ['100 mL', 'SG 5%']] });
       html += lista('Junto', ['Dosar e repor magnésio.', 'Suspender ou revisar bisfosfonato, diurético de alça e inibidor de bomba se forem a causa.']);
     }
     html += linkConduta('#nefro/calcio', 'Ver a conduta completa de cálcio');
@@ -435,11 +501,8 @@
     var ca = num(s.ca), alb = num(s.alb), ref = num(s.ref) || 4;
     if (ca === null || alb === null) return html + vazio('Informe cálcio e albumina.');
     var corr = ca + 0.8 * (ref - alb);
-    html += '<div class="el-calc">' +
-      '<div class="el-calc-cab">Cálcio corrigido</div>' +
-      '<div class="el-calc-big">' + f(corr, 2) + ' <small>mg/dL</small></div>' +
-      '<div class="el-calc-txt">Ca + 0,8 × (' + f(ref, 1) + ' − albumina). Cada 1 g/dL de albumina abaixo da referência esconde 0,8 mg/dL de cálcio.</div>' +
-      '</div>';
+    html += calcCard('Cálcio corrigido', f(corr, 2), 'mg/dL', '',
+      'Ca + 0,8 × (' + f(ref, 1) + ' − albumina). Cada 1 g/dL de albumina abaixo da referência esconde 0,8 mg/dL de cálcio.');
     if (corr < 7.5) html += status('grave', 'Hipocalcemia grave (≤ 7,5)', 'Mesmo sem sintoma, considerar cálcio endovenoso. Confirmar com cálcio iônico.');
     else if (corr < 8.5) html += status('atencao', 'Hipocalcemia (< 8,5)', 'Reposição oral se assintomático; endovenosa se houver tetania, QT longo ou convulsão.');
     else if (corr > 10.5) html += status('atencao', 'Hipercalcemia (> 10,5)', 'Hidratação com SF 200–300 mL/h é a base; acima de 14 ou sintomático, tratar como emergência.');
@@ -519,7 +582,7 @@
   function passos(caixa) {
     var ROT = [
       ['el-status', 'Resultado'], ['el-alerta', 'Atenção'], ['el-rx', 'Prescrever'], ['el-conduta', 'Conduzir'],
-      ['el-calc', 'Cálculo'], ['el-lista', 'Conferir'], ['el-opcoes', 'Escolha'], ['el-passo', 'Passo'], ['el-nota', 'Reavaliar'], ['el-vazio', 'Aguardando']
+      ['el-calc', 'Cálculo'], ['el-inf', 'Prescrever'], ['el-lista', 'Conferir'], ['el-opcoes', 'Escolha'], ['el-passo', 'Passo'], ['el-nota', 'Reavaliar'], ['el-vazio', 'Aguardando']
     ];
     [].slice.call(caixa.children).forEach(function (x) {
       if (x.querySelector(':scope > .el-p-rot')) return;

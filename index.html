@@ -19,7 +19,7 @@
 <!-- React baixa junto com o runtime, em vez de só depois dele -->
 <link rel="preload" href="assets/js/react.production.min.js" as="script">
 <link rel="preload" href="assets/js/react-dom.production.min.js" as="script">
-<script>window.__resources = {"https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/js/react-dom.production.min.js", "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/js/react.production.min.js"};</script>
+<script>window.__resources = {"https://unpkg.com/react@18.3.1/umd/react.production.min.js": "assets/js/react.production.min.js", "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "assets/js/react-dom.production.min.js"};</script>
 <script src="assets/js/dc-runtime.js"></script>
 </head>
 <body>
@@ -953,10 +953,11 @@ class Component extends DCLogic {
         const st = d.createElement('style'); st.id = 'ma-home';
         st.textContent = '.tz-pergunta h1{display:none!important}.tz-pergunta p{margin:0 0 12px!important}.tz-topo{padding-bottom:22px!important;margin-bottom:12px!important}.tz-l1{margin-bottom:14px!important}' +
           '.tz-col-cab{min-height:0!important;padding:11px 14px 12px!important;gap:10px!important}.tz-col-cab b{font-size:15.5px!important;padding-right:40px!important}.tz-num{font-size:24px!important;right:12px!important;bottom:10px!important}.tz-nivel{font-size:9.5px!important}.tz-nivel i{font-size:10px!important;padding:2px 7px!important}.tz-col{border-radius:16px!important}' +
-          '.cd-aviso{display:none!important}@media(max-width:899px){.tz-col>*:not(.tz-col-cab){display:none!important}.tz-quadro{gap:8px!important}.tz-col{border:0!important}}' +
+          '@media(max-width:899px){.tz-col>*:not(.tz-col-cab){display:none!important}.tz-quadro{gap:8px!important}.tz-col{border:0!important}}' +
           '@media(min-width:900px){.tz-quadro{grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:10px!important}.tz-nivel i{display:none!important}.tz-it{font-size:12.5px!important}}';
         d.head.appendChild(st);
       }
+      if (!d._maAviso && d.body && fw.MutationObserver) { d._maAviso = 1; const hide = () => d.querySelectorAll('.cd-aviso').forEach((x) => { if (x.style.display !== 'none' && /^\s*Apoio à decisão/.test(x.textContent)) x.style.display = 'none'; }); hide(); new fw.MutationObserver(hide).observe(d.body, { childList: true, subtree: true }); }
       const p = d.getElementById('peso');
       if (p && !p.value) { p.value = '70'; p.dispatchEvent(new Event('input', { bubbles: true })); p.dispatchEvent(new Event('change', { bubbles: true })); }
       if (d.activeElement && d.activeElement.blur) d.activeElement.blur();

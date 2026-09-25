@@ -1103,14 +1103,28 @@
     return c.nome + ': ' + r.valor + (r.detalhe ? ' — ' + r.detalhe : '');
   }
 
+  /* celular: pergunta com as respostas à vista, um toque em vez de abrir lista */
+  var focoHash = '', yLista = 0;
+  function celCalc() { return !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches); }
+  function perguntaCalc(c, k, rot, opcoes, val) {
+    var curtas = opcoes.length <= 3 && opcoes.every(function (o) { return String(o[1]).length <= 14; });
+    return '<fieldset class="cc-q' + (val !== '' ? ' ok' : '') + '"><legend>' + esc(rot) + '</legend>' +
+      '<div class="cc-ops' + (curtas ? ' lado' : '') + '">' + opcoes.map(function (o) {
+        return '<label class="cc-op"><input type="radio" name="cc-' + esc(c.id) + '-' + k + '" data-calc="' + c.id + '" data-k="' + k + '" value="' + esc(o[0]) + '"' +
+          (String(val) === String(o[0]) ? ' checked' : '') + '><span>' + esc(o[1]) + '</span></label>';
+      }).join('') + '</div></fieldset>';
+  }
+
   function calcCorpo(c) {
     var v = calcVal[c.id] || {};
+    var cel = celCalc();
     var html = '<div class="ferr-calc-corpo">';
     if (c.quando) html += '<p class="ferr-quando">' + esc(c.quando) + '</p>';
 
     if (c.tipo === 'formula') {
       html += '<div class="ferr-campos">' + c.campos.map(function (cp) {
         var val = v[cp.k] === undefined ? '' : v[cp.k];
+        if (cp.opcoes && cel && cp.opcoes.length <= 6) return '<div class="ferr-campo larga">' + perguntaCalc(c, cp.k, cp.rot, cp.opcoes, val) + '</div>';
         if (cp.opcoes) {
           return '<label class="ferr-campo"><span>' + esc(cp.rot) + '</span><select data-calc="' + c.id + '" data-k="' + cp.k + '">' +
             '<option value="">Selecione</option>' +
@@ -1127,6 +1141,11 @@
           (cp.min !== undefined ? ' min="' + cp.min + '"' : '') +
           (cp.max !== undefined ? ' max="' + cp.max + '"' : '') +
           ' data-calc="' + c.id + '" data-k="' + cp.k + '" value="' + esc(val) + '"></label>';
+      }).join('') + '</div>';
+
+    } else if (c.seletor && cel) {
+      html += '<div class="cc-qs">' + c.itens.map(function (it, i) {
+        return perguntaCalc(c, 'i' + i, it.rot, it.opcoes, v['i' + i] === undefined ? '' : v['i' + i]);
       }).join('') + '</div>';
 
     } else if (c.seletor) {
@@ -1165,10 +1184,13 @@
         (c.exige ? 'Responda todos os itens para ver o resultado.' : 'Preencha os campos para ver o resultado.') +
       '</div>';
     }
-    if (c.limites) {
-      html += '<div class="ferr-limites"><b>Limitações</b>' + esc(c.limites) + '</div>';
+    /* limitações e fonte ficam num toque: o resultado vem primeiro */
+    if (c.limites || c.fonte) {
+      html += '<details class="ferr-mais"><summary>' + ICO('setaDir') + (c.limites ? 'Limitações e fonte' : 'Fonte') + '</summary>' +
+        (c.limites ? '<div class="ferr-limites">' + esc(c.limites) + '</div>' : '') +
+        (c.fonte ? '<p class="ferr-fonte">Fonte: ' + esc(c.fonte) + '</p>' : '') +
+      '</details>';
     }
-    if (c.fonte) html += '<p class="ferr-fonte">Fonte: ' + esc(c.fonte) + '</p>';
     return html + '</div>';
   }
 
@@ -1230,6 +1252,19 @@
       return lista.some(function (c) { return c.ramo === g.id; });
     });
     var html = nu ? '' : cabecalho(abaDe('calculadoras'));
+
+    /* celular: o escore aberto ocupa a tela sozinho, com volta para a lista */
+    if (calcAberta && celCalc() && focoHash !== location.hash) calcAberta = null;
+    var foco = calcAberta && celCalc() && lista.filter(function (c) { return c.id === calcAberta; })[0];
+    if (foco) {
+      return html + '<div class="cc-foco">' +
+        '<button type="button" class="cc-voltar" data-acao="calc-abrir" data-id="' + esc(foco.id) + '">' + ICO('setaEsq') +
+          (tipo === 'escore' ? 'Todos os scores' : 'Todas as calculadoras') + '</button>' +
+        '<section class="ferr-calc cc aberta cc-isolado">' +
+          '<header class="cc-foco-cab"><h2>' + esc(foco.nome) + '</h2>' + (foco.sub ? '<p>' + esc(foco.sub) + '</p>' : '') + '</header>' +
+          calcCorpo(foco) +
+        '</section></div>';
+    }
 
     /* 1. atalho para o que se abre mais */
     var top = maisUsados(lista);
@@ -1339,6 +1374,13 @@
   function calcPedia(d, kg, conc) {
     if (conc === undefined) conc = d.conc;
     if (!kg || d.mgkg == null) return null;
+    /* unid mL com conc 1000: o valor por kg já é mL/kg (SRO 75 mL/kg) — o resultado
+       é volume, não "mg ÷ 1000" (antes saía 1,13 mL em vez de 1.125 mL para 15 kg) */
+    if (d.unid === 'mL' && d.conc === 1000) {
+      var ml = function (x) { return String(Math.round(x)).replace('.', ','); };
+      var v = ml(kg * d.mgkg) + (d.mgkgMax && d.mgkgMax !== d.mgkg ? ' a ' + ml(kg * d.mgkgMax) : '') + ' mL';
+      return { mg:v, vol:'', limitou:false };
+    }
     var mg = kg * d.mgkg;
     var mgAlto = d.mgkgMax && d.mgkgMax !== d.mgkg ? kg * d.mgkgMax : null;
     var limitou = false;
@@ -3695,7 +3737,15 @@
 
     /* --- calculadoras --- */
     if (acao === 'calc-abrir' && calcAberta !== id) marcaUso(id);
-    if (acao === 'calc-abrir')   { calcAberta = (calcAberta === id ? null : id); redesenhaFixo(); return; }
+    if (acao === 'calc-abrir') {
+      var abrir = calcAberta !== id;
+      calcAberta = abrir ? id : null;
+      if (celCalc()) {
+        if (abrir) { yLista = window.scrollY; focoHash = location.hash; redesenha(); window.scrollTo(0, 0); }
+        else { redesenha(); window.scrollTo(0, yLista || 0); }
+      } else redesenhaFixo();
+      return;
+    }
     if (acao === 'calc-limpar')  { calcVal[id] = {}; redesenhaFixo(); return; }
     if (acao === 'calc-limpar-tudo') { calcVal = {}; redesenhaFixo(); return; }
     if (acao === 'calc-copiar' || acao === 'calc-empilhar') {
@@ -3987,12 +4037,15 @@
     if (r && badge) { badge.className = 'ferr-calc-badge ' + r.classe; badge.textContent = r.valor; }
     else if (r && !badge) {
       var topo = sec.querySelector('.ferr-calc-topo');
-      var novo = document.createElement('span');
-      novo.className = 'ferr-calc-badge ' + r.classe;
-      novo.textContent = r.valor;
-      topo.insertBefore(novo, topo.querySelector('.ferr-calc-seta'));
+      if (topo) {
+        var novo = document.createElement('span');
+        novo.className = 'ferr-calc-badge ' + r.classe;
+        novo.textContent = r.valor;
+        topo.insertBefore(novo, topo.querySelector('.ferr-calc-seta'));
+      }
     } else if (!r && badge) { badge.remove(); }
     if (t.type === 'checkbox') t.closest('.ferr-item').classList.toggle('on', t.checked);
+    if (t.type === 'radio') { var q = t.closest('.cc-q'); if (q) q.classList.add('ok'); }
   }
 
   /* ---------- salvar formularios ---------- */

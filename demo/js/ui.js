@@ -67,7 +67,7 @@
       acceptNode: function (n) {
         if (!n.nodeValue || n.nodeValue.length < 4) return NodeFilter.FILTER_REJECT;
         var pai = n.parentNode;
-        if (!pai || pai.closest('.peso-calc, input, textarea, select, .ferr-saida, .pd-med')) return NodeFilter.FILTER_REJECT;
+        if (!pai || pai.closest('.peso-calc, input, textarea, select, .ferr-saida, .pd-med, .bzf, .dz2-card, .pd3')) return NodeFilter.FILTER_REJECT;
         RE_KG.lastIndex = 0;
         return RE_KG.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
       }
@@ -214,11 +214,12 @@
     quemAbriu = null;
   }
   UI.fecha = fecha;
-  UI.abreAjustes = function () { fecha(); abre('ajustes'); };
+  UI.abreAjustes = function () { fecha(); location.hash = '#ajustes'; };
 
   $('btnMenu').addEventListener('click', function () { alterna('side'); });
   $('btnSideX').addEventListener('click', fecha);
-  $('btnAjustes').addEventListener('click', function () { alterna('ajustes'); });
+  /* configurações agora são uma página inteira (#ajustes) */
+  $('btnAjustes').addEventListener('click', function () { fecha(); location.hash = '#ajustes'; });
   $('btnAjustesX').addEventListener('click', fecha);
   veu.addEventListener('click', fecha);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecha(); });
@@ -319,7 +320,7 @@
       itens: dados
     };
     var d = new Date();
-    var nome = 'guia-plantao-' + d.getFullYear() + '-' +
+    var nome = 'medatalho-backup-' + d.getFullYear() + '-' +
       ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + '.json';
     var blob = new Blob([JSON.stringify(pacote, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
