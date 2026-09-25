@@ -118,6 +118,11 @@ tpl = re.sub(r'(&quot;teste&quot;:\{[^}]*?&quot;default&quot;:)true', r'\1false'
 tpl = re.sub(r'\s*<span [^<>]*>UpToDate</span>', '', tpl)                                   # não citar UpToDate
 assert 'UpToDate' not in tpl
 
+# bug do original: no celular nem o 1º link do menu cabia e "Como funciona" aparecia cortado ao meio.
+# Abaixo de 540px ficam só logo + Assinar (o <div> continua ocupando o espaço, o botão não pula).
+tpl = troca(tpl, 'summary::-webkit-details-marker{display:none}',
+            'summary::-webkit-details-marker{display:none}\n    @media (max-width:540px){[data-nav]>div{visibility:hidden}}')
+
 # bug do original: iframe ainda não carregado era apontado para "app/index.html", que não existe
 tpl = troca(tpl, "f.setAttribute('src', 'app/index.html' + hash);", "f.setAttribute('src', 'demo/index.html' + hash);")
 
